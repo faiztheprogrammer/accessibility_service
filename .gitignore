@@ -1,0 +1,87 @@
+# -------------------------------------------------------------------
+# Miscellaneous
+# -------------------------------------------------------------------
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+Thumbs.db
+
+# -------------------------------------------------------------------
+# IntelliJ/Android Studio
+# -------------------------------------------------------------------
+*.iml
+*.ipr
+*.iws
+.idea/
+.gradle/
+build/
+captures/
+externalLibraries/
+externalLibraries_auto_conf/
+
+# -------------------------------------------------------------------
+# VS Code
+# -------------------------------------------------------------------
+.vscode/
+
+# -------------------------------------------------------------------
+# Flutter/Dart/Pub
+# -------------------------------------------------------------------
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+/build/
+doc/api/
+/coverage/
+
+# -------------------------------------------------------------------
+# Android Specific (The Culprits)
+# -------------------------------------------------------------------
+**/android/local.properties
+**/android/key.properties
+**/android/app/local.properties
+**/android/app/generated_signing_config_debug_report
+**/android/app/debug/*
+**/android/app/profile/*
+**/android/app/release/*
+
+# Ignore the entire build directory for Android
+android/app/build/
+android/.gradle/
+app/build/
+
+# -------------------------------------------------------------------
+# iOS Specific
+# -------------------------------------------------------------------
+**/ios/Flutter/Generated.xcconfig
+**/ios/Flutter/flutter_export_environment.sh
+**/ios/Flutter/.last_build_id
+**/ios/Pods/
+**/ios/.symlinks/
+**/ios/Flutter/App.framework
+**/ios/Flutter/Flutter.framework
+**/ios/Flutter/Flutter.podspec
+**/ios/DerivedData/
+*.moved-aside
+*.xcuserstate
+
+# -------------------------------------------------------------------
+# Binary Files
+# -------------------------------------------------------------------
+*.jar
+*.apk
+*.aab
+*.dex
