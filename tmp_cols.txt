@@ -1,0 +1,10 @@
+Columns:
+user_id, session_id, timestamp, app_name, event_type
+
+Data:
+   user_id  session_id           timestamp                     app_name event_type
+0        0           1 2018-01-16 06:01:05  Minesweeper Classic (Mines)     Opened
+1        0           1 2018-01-16 06:01:05  Minesweeper Classic (Mines)     Closed
+2        0           1 2018-01-16 06:01:07  Minesweeper Classic (Mines)     Opened
+3        0           1 2018-01-16 06:01:07  Minesweeper Classic (Mines)     Closed
+4        0           1 2018-01-16 06:01:08  Minesweeper Classic (Mines)     Opened

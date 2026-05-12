@@ -6,7 +6,7 @@ plugins {
 
 android {
     namespace = "com.example.accessibility_service"
-    compileSdk = 34
+    compileSdk = 36
     
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -20,8 +20,8 @@ android {
 
     defaultConfig {
         applicationId = "com.example.accessibility_service"
-        minSdk = 21
-        targetSdk = 34
+        minSdk = flutter.minSdkVersion
+        targetSdk = 36
         versionCode = 1
         versionName = "1.0"
         multiDexEnabled = true
