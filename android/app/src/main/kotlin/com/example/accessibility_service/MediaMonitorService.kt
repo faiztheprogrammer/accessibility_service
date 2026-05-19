@@ -2,9 +2,11 @@ package com.example.accessibility_service
 
 import android.content.ComponentName
 import android.content.Context
+import android.content.Intent
 import android.media.MediaMetadata
 import android.media.session.MediaController
 import android.media.session.MediaSessionManager
+import android.media.session.PlaybackState
 import android.service.notification.NotificationListenerService
 import android.util.Log
 
@@ -12,43 +14,24 @@ class MediaMonitorService : NotificationListenerService() {
 
     private lateinit var mediaSessionManager: MediaSessionManager
     private var activeControllers: List<MediaController> = emptyList()
+    private val controllerCallbacks = mutableMapOf<MediaController, MediaController.Callback>()
+    private var lastBroadcastSignature = ""
+    private var lastBroadcastAt = 0L
 
     private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         Log.d("MediaMonitor", "Active sessions changed")
+        unregisterCallbacks()
         activeControllers = controllers ?: emptyList()
         registerCallbacks()
     }
 
-    private val callback = object : MediaController.Callback() {
-        override fun onMetadataChanged(metadata: MediaMetadata?) {
-            super.onMetadataChanged(metadata)
-            metadata?.let {
-                val title = it.getString(MediaMetadata.METADATA_KEY_TITLE) ?: ""
-                val artist = it.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: ""
-                val album = it.getString(MediaMetadata.METADATA_KEY_ALBUM) ?: ""
-
-                if (title.isNotEmpty()) {
-                    Log.i("MediaMonitor", "🎵 Media Playing: Title='$title', Artist='$artist', Album='$album'")
-                    
-                    // Broadcast the media info to our AccessibilityMonitorService
-                    // so it can send it to Flutter using the existing MethodChannel
-                    val intent = android.content.Intent("com.example.accessibility_service.MEDIA_UPDATE")
-                    intent.putExtra("title", title)
-                    intent.putExtra("channel", artist.ifEmpty { album })
-                    intent.putExtra("package", "media_session") // Or extract package from controller
-                    sendBroadcast(intent)
-                }
-            }
-        }
-    }
-
     override fun onListenerConnected() {
         super.onListenerConnected()
-        Log.i("MediaMonitor", "NotificationListener Connected - Media Monitoring Active")
+        Log.i("MediaMonitor", "NotificationListener connected - media monitoring active")
         mediaSessionManager = getSystemService(Context.MEDIA_SESSION_SERVICE) as MediaSessionManager
-        
+
         val componentName = ComponentName(this, MediaMonitorService::class.java)
-        
+
         try {
             mediaSessionManager.addOnActiveSessionsChangedListener(sessionListener, componentName)
             activeControllers = mediaSessionManager.getActiveSessions(componentName)
@@ -61,24 +44,93 @@ class MediaMonitorService : NotificationListenerService() {
     override fun onListenerDisconnected() {
         super.onListenerDisconnected()
         try {
-            mediaSessionManager.removeOnActiveSessionsChangedListener(sessionListener)
+            if (::mediaSessionManager.isInitialized) {
+                mediaSessionManager.removeOnActiveSessionsChangedListener(sessionListener)
+            }
             unregisterCallbacks()
         } catch (e: Exception) {
             Log.e("MediaMonitor", "Error disconnecting listener: ${e.message}")
         }
     }
 
+    override fun onDestroy() {
+        unregisterCallbacks()
+        super.onDestroy()
+    }
+
     private fun registerCallbacks() {
         activeControllers.forEach { controller ->
+            if (controllerCallbacks.containsKey(controller)) return@forEach
+
+            val callback = object : MediaController.Callback() {
+                override fun onMetadataChanged(metadata: MediaMetadata?) {
+                    super.onMetadataChanged(metadata)
+                    emitMediaUpdate(controller, "metadata")
+                }
+
+                override fun onPlaybackStateChanged(state: PlaybackState?) {
+                    super.onPlaybackStateChanged(state)
+                    emitMediaUpdate(controller, "playback_state")
+                }
+
+                override fun onSessionDestroyed() {
+                    super.onSessionDestroyed()
+                    unregisterController(controller)
+                }
+            }
+
+            controllerCallbacks[controller] = callback
             controller.registerCallback(callback)
-            // Get current metadata immediately upon registration
-            callback.onMetadataChanged(controller.metadata)
+            emitMediaUpdate(controller, "initial")
         }
     }
 
     private fun unregisterCallbacks() {
-        activeControllers.forEach { controller ->
-            controller.unregisterCallback(callback)
+        controllerCallbacks.toMap().forEach { (controller, callback) ->
+            try {
+                controller.unregisterCallback(callback)
+            } catch (e: Exception) {
+                Log.w("MediaMonitor", "Failed to unregister callback: ${e.message}")
+            }
         }
+        controllerCallbacks.clear()
+    }
+
+    private fun unregisterController(controller: MediaController) {
+        controllerCallbacks.remove(controller)?.let { callback ->
+            try {
+                controller.unregisterCallback(callback)
+            } catch (e: Exception) {
+                Log.w("MediaMonitor", "Failed to unregister destroyed session: ${e.message}")
+            }
+        }
+    }
+
+    private fun emitMediaUpdate(controller: MediaController, reason: String) {
+        val metadata = controller.metadata ?: return
+        val title = metadata.getString(MediaMetadata.METADATA_KEY_TITLE)?.trim().orEmpty()
+        if (title.isEmpty()) return
+
+        val artist = metadata.getString(MediaMetadata.METADATA_KEY_ARTIST)?.trim().orEmpty()
+        val album = metadata.getString(MediaMetadata.METADATA_KEY_ALBUM)?.trim().orEmpty()
+        val channel = artist.ifEmpty { album }
+        val packageName = controller.packageName ?: "media_session"
+        val signature = "$packageName|$title|$channel"
+        val now = System.currentTimeMillis()
+
+        if (signature == lastBroadcastSignature && now - lastBroadcastAt < 2_000L) {
+            return
+        }
+
+        lastBroadcastSignature = signature
+        lastBroadcastAt = now
+
+        Log.i("MediaMonitor", "Media update ($reason): title='$title', channel='$channel', package='$packageName'")
+
+        val intent = Intent("com.example.accessibility_service.MEDIA_UPDATE")
+        intent.putExtra("title", title)
+        intent.putExtra("channel", channel)
+        intent.putExtra("package", packageName)
+        sendBroadcast(intent)
     }
 }

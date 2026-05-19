@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:developer' as developer;
+import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiService {
-  // Use 127.0.0.1:8000 with 'adb reverse tcp:8000 tcp:8000' for physical devices
-  static const String baseUrl = 'http://127.0.0.1:8000';
+  static const String evaluateContentUrl =
+      'http://192.168.100.201:8000/evaluate_content';
 
   static Future<Map<String, dynamic>?> evaluateContent({
     required String title,
@@ -12,7 +15,7 @@ class ApiService {
   }) async {
     try {
       final response = await http.post(
-        Uri.parse('$baseUrl/evaluate_content'),
+        Uri.parse(evaluateContentUrl),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'title': title,
@@ -25,22 +28,45 @@ class ApiService {
       if (response.statusCode == 200) {
         return jsonDecode(response.body);
       }
-    } catch (e) {
-      print('API Error (Connection Lost?): $e');
-      // FALLBACK: Simulating a local evaluation if the server is unreachable
-      // This prevents the UI from getting "stuck" when the laptop is away.
-      return _localHeuristicFallback(title, extractedText);
+
+      developer.log(
+        'AI API returned HTTP ${response.statusCode}: ${response.body}',
+        name: 'ApiService',
+      );
+      return _offlineFallback();
+    } on SocketException catch (e, stackTrace) {
+      developer.log(
+        'AI API socket error',
+        name: 'ApiService',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      return _offlineFallback();
+    } on TimeoutException catch (e, stackTrace) {
+      developer.log(
+        'AI API timed out',
+        name: 'ApiService',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      return _offlineFallback();
+    } catch (e, stackTrace) {
+      developer.log(
+        'AI API unexpected error',
+        name: 'ApiService',
+        error: e,
+        stackTrace: stackTrace,
+      );
+      return _offlineFallback();
     }
-    return null;
   }
 
-  static Map<String, dynamic> _localHeuristicFallback(String title, String text) {
-    final combined = '$title $text'.toLowerCase();
-    final isProductive = combined.contains('tutorial') || combined.contains('code') || combined.contains('programming');
+  static Map<String, dynamic> _offlineFallback() {
     return {
-      'is_productive': isProductive,
-      'relevance_score': isProductive ? 0.75 : 0.25,
-      'source': 'local_backup'
+      'is_productive': false,
+      'relevance_score': 0.0,
+      'error': true,
+      'source': 'ai_offline',
     };
   }
 }

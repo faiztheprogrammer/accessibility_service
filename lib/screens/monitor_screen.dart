@@ -10,7 +10,7 @@ class MonitorScreen extends StatefulWidget {
   State<MonitorScreen> createState() => _MonitorScreenState();
 }
 
-class _MonitorScreenState extends State<MonitorScreen> {
+class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserver {
   List<Map<String, dynamic>> _logEntries = [];
   bool _isServiceActive = false;
   String _currentApp = 'None';
@@ -32,12 +32,51 @@ class _MonitorScreenState extends State<MonitorScreen> {
   void initState() {
     super.initState();
     _platformChannel = const MethodChannel('com.example.accessibility_service/monitor');
+    WidgetsBinding.instance.addObserver(this);
     _initChannel();
-    _loadHistoricalData();
+    _refreshMonitorState();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refreshMonitorState();
+    }
+  }
+
+  Future<void> _refreshMonitorState() async {
+    await Future.wait([
+      _syncNotificationListenerPermission(),
+      _loadHistoricalData(),
+    ]);
+  }
+
+  Future<void> _syncNotificationListenerPermission() async {
+    try {
+      final isEnabled = await _platformChannel.invokeMethod<bool>(
+        'is_notification_listener_enabled',
+      );
+      if (!mounted) return;
+      setState(() {
+        _isServiceActive = isEnabled ?? false;
+      });
+    } on PlatformException {
+      if (!mounted) return;
+      setState(() {
+        _isServiceActive = false;
+      });
+    }
   }
 
   Future<void> _loadHistoricalData() async {
     final logs = await DatabaseService().getRecentContent();
+    if (!mounted) return;
     setState(() {
       _logEntries = logs.map((row) => {
         'app': row['app_name'],
@@ -131,11 +170,13 @@ class _MonitorScreenState extends State<MonitorScreen> {
     bool isProductive = false;
     double relevanceScore = 0.0;
     String source = 'api';
+    bool hasError = false;
     
     if (result != null) {
       isProductive = result['is_productive'] ?? false;
       relevanceScore = (result['relevance_score'] as num).toDouble();
       source = result['source'] ?? 'api';
+      hasError = result['error'] == true;
     }
     
     await DatabaseService().insertVerdict(contentId, relevanceScore, isProductive);
@@ -144,8 +185,12 @@ class _MonitorScreenState extends State<MonitorScreen> {
     _addLog(_currentApp, displayTitle, isProductive, source: source);
     
     setState(() {
-      _isOfflineMode = (source == 'local_backup');
-      if (isProductive) {
+      _isOfflineMode = hasError || source == 'ai_offline' || source == 'local_backup';
+      if (hasError || source == 'ai_offline') {
+        _bannerTitle = 'AI Offline';
+        _bannerMessage = 'Could not reach the evaluator over Wi-Fi.';
+        _bannerColor = Colors.orange;
+      } else if (isProductive) {
         _bannerTitle = 'Productive Content (${(relevanceScore * 100).toInt()}%)';
         _bannerMessage = 'Keep up the good work!';
         _bannerColor = Colors.green;
@@ -203,13 +248,16 @@ class _MonitorScreenState extends State<MonitorScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(_isServiceActive ? 'Background Protection Active' : 'Protection Disabled',
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        Text('Current App: $_currentApp', style: TextStyle(color: Colors.grey[600])),
-                        if (_lastContent.isNotEmpty) ...[
-                          const SizedBox(height: 8),
-                          Text(_lastContent, style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        ],
+                        Text(_isServiceActive ? 'Background Protection Active' : 'Accessibility Service Off',
+                          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _isServiceActive ? Colors.green : Colors.red)),
+                        const Text('Please ensure "Notification Access" is also granted in Settings for YouTube tracking.',
+                          style: TextStyle(fontSize: 10, color: Colors.blueGrey)),
+                        const SizedBox(height: 4),
+                        ElevatedButton(
+                          onPressed: () => _platformChannel.invokeMethod('open_notification_settings'),
+                          style: ElevatedButton.styleFrom(visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
+                          child: const Text('Open Notification Settings', style: TextStyle(fontSize: 10)),
+                        ),
                       ],
                     ),
                   ),
