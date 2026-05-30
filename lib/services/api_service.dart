@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'db_service.dart';
 
 class ApiService {
   static const String evaluateContentUrl =
@@ -13,6 +14,8 @@ class ApiService {
     required String channel,
     required String extractedText,
   }) async {
+    final focusGoal = await DatabaseService().getFocusGoal();
+
     try {
       final response = await http.post(
         Uri.parse(evaluateContentUrl),
@@ -21,7 +24,7 @@ class ApiService {
           'title': title,
           'channel': channel,
           'extracted_text': extractedText,
-          'career_goal': 'Software Engineer',
+          'career_goal': focusGoal,
         }),
       ).timeout(const Duration(seconds: 5));
 

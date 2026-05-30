@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/db_service.dart';
 import '../services/api_service.dart';
+import 'profile_screen.dart';
 
 class MonitorScreen extends StatefulWidget {
   const MonitorScreen({super.key});
@@ -222,6 +223,14 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
             icon: Icon(_isServiceActive ? Icons.check_circle : Icons.error),
             color: _isServiceActive ? Colors.green : Colors.orange,
             onPressed: () {},
+          ),
+          IconButton(
+            icon: const Icon(Icons.person),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ProfileScreen()),
+              );
+            },
           ),
           IconButton(
             icon: const Icon(Icons.clear_all),
