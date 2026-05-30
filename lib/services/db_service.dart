@@ -22,7 +22,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: (db, version) async {
         await _createCoreTables(db);
         await _createFypTables(db);
@@ -30,6 +30,9 @@ class DatabaseService {
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await _createFypTables(db);
+        }
+        if (oldVersion < 3) {
+          await _upgradeBehavioralMetrics(db);
         }
       },
     );
@@ -86,7 +89,14 @@ class DatabaseService {
         night_usage INTEGER DEFAULT 0,
         session_frequency INTEGER DEFAULT 0,
         total_time_today INTEGER DEFAULT 0,
-        app_category TEXT
+        app_category TEXT,
+        metric_date TEXT,
+        productive_count INTEGER DEFAULT 0,
+        unproductive_count INTEGER DEFAULT 0,
+        distraction_ratio REAL DEFAULT 0,
+        focus_score REAL DEFAULT 0,
+        top_distracting_app TEXT,
+        updated_at TEXT
       )
     ''');
 
@@ -111,6 +121,54 @@ class DatabaseService {
     ''');
   }
 
+  Future<void> _upgradeBehavioralMetrics(Database db) async {
+    await _addColumnIfMissing(db, 'BehavioralMetrics', 'metric_date', 'TEXT');
+    await _addColumnIfMissing(
+      db,
+      'BehavioralMetrics',
+      'productive_count',
+      'INTEGER DEFAULT 0',
+    );
+    await _addColumnIfMissing(
+      db,
+      'BehavioralMetrics',
+      'unproductive_count',
+      'INTEGER DEFAULT 0',
+    );
+    await _addColumnIfMissing(
+      db,
+      'BehavioralMetrics',
+      'distraction_ratio',
+      'REAL DEFAULT 0',
+    );
+    await _addColumnIfMissing(
+      db,
+      'BehavioralMetrics',
+      'focus_score',
+      'REAL DEFAULT 0',
+    );
+    await _addColumnIfMissing(
+      db,
+      'BehavioralMetrics',
+      'top_distracting_app',
+      'TEXT',
+    );
+    await _addColumnIfMissing(db, 'BehavioralMetrics', 'updated_at', 'TEXT');
+  }
+
+  Future<void> _addColumnIfMissing(
+    Database db,
+    String table,
+    String column,
+    String definition,
+  ) async {
+    final columns = await db.rawQuery('PRAGMA table_info($table)');
+    final exists = columns.any((row) => row['name'] == column);
+    if (!exists) {
+      await db.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+    }
+  }
+
   // Session Management
   Future<int> insertSession(String appName) async {
     final db = await database;
@@ -124,6 +182,33 @@ class DatabaseService {
       {'end_time': DateTime.now().toIso8601String()},
       where: 'id = ?',
       whereArgs: [sessionId],
+    );
+  }
+
+  Future<Map<String, dynamic>?> getSessionById(int sessionId) async {
+    final db = await database;
+    final rows = await db.query(
+      'AppSessions',
+      where: 'id = ?',
+      whereArgs: [sessionId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<List<Map<String, dynamic>>> getSessionsForDate(DateTime date) async {
+    final db = await database;
+    final day = _dateKey(date);
+    return await db.rawQuery(
+      '''
+      SELECT *
+      FROM AppSessions
+      WHERE substr(start_time, 1, 10) = ?
+      ORDER BY start_time ASC
+      ''',
+      [day],
     );
   }
 
@@ -159,6 +244,24 @@ class DatabaseService {
       ORDER BY c.timestamp DESC
       LIMIT 50
     ''');
+  }
+
+  Future<List<Map<String, dynamic>>> getContentVerdictsForDate(
+    DateTime date,
+  ) async {
+    final db = await database;
+    final day = _dateKey(date);
+    return await db.rawQuery(
+      '''
+      SELECT c.*, v.relevance_score, v.is_productive, s.app_name
+      FROM Content c
+      LEFT JOIN Verdicts v ON c.id = v.content_id
+      JOIN AppSessions s ON c.session_id = s.id
+      WHERE substr(c.timestamp, 1, 10) = ?
+      ORDER BY c.timestamp ASC
+      ''',
+      [day],
+    );
   }
 
   Future<void> upsertUserProfile(String focusGoal, {String userId = 'default_user'}) async {
@@ -201,6 +304,12 @@ class DatabaseService {
     required int sessionFrequency,
     required int totalTimeToday,
     required String appCategory,
+    String? metricDate,
+    int productiveCount = 0,
+    int unproductiveCount = 0,
+    double distractionRatio = 0,
+    double focusScore = 0,
+    String? topDistractingApp,
   }) async {
     final db = await database;
     return await db.insert('BehavioralMetrics', {
@@ -209,7 +318,80 @@ class DatabaseService {
       'session_frequency': sessionFrequency,
       'total_time_today': totalTimeToday,
       'app_category': appCategory,
+      'metric_date': metricDate,
+      'productive_count': productiveCount,
+      'unproductive_count': unproductiveCount,
+      'distraction_ratio': distractionRatio,
+      'focus_score': focusScore,
+      'top_distracting_app': topDistractingApp,
+      'updated_at': DateTime.now().toIso8601String(),
     });
+  }
+
+  Future<void> upsertBehavioralMetrics({
+    required String metricDate,
+    required double avgSessionDuration,
+    required bool nightUsage,
+    required int sessionFrequency,
+    required int totalTimeToday,
+    required String appCategory,
+    required int productiveCount,
+    required int unproductiveCount,
+    required double distractionRatio,
+    required double focusScore,
+    String? topDistractingApp,
+  }) async {
+    final db = await database;
+    final existing = await db.query(
+      'BehavioralMetrics',
+      where: 'metric_date = ? AND app_category = ?',
+      whereArgs: [metricDate, appCategory],
+      limit: 1,
+    );
+
+    final values = {
+      'avg_session_duration': avgSessionDuration,
+      'night_usage': nightUsage ? 1 : 0,
+      'session_frequency': sessionFrequency,
+      'total_time_today': totalTimeToday,
+      'app_category': appCategory,
+      'metric_date': metricDate,
+      'productive_count': productiveCount,
+      'unproductive_count': unproductiveCount,
+      'distraction_ratio': distractionRatio,
+      'focus_score': focusScore,
+      'top_distracting_app': topDistractingApp,
+      'updated_at': DateTime.now().toIso8601String(),
+    };
+
+    if (existing.isEmpty) {
+      await db.insert('BehavioralMetrics', values);
+      return;
+    }
+
+    await db.update(
+      'BehavioralMetrics',
+      values,
+      where: 'id = ?',
+      whereArgs: [existing.first['id']],
+    );
+  }
+
+  Future<Map<String, dynamic>?> getBehavioralMetricsForDate({
+    required DateTime date,
+    String appCategory = 'YouTube',
+  }) async {
+    final db = await database;
+    final rows = await db.query(
+      'BehavioralMetrics',
+      where: 'metric_date = ? AND app_category = ?',
+      whereArgs: [_dateKey(date), appCategory],
+      orderBy: 'updated_at DESC',
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return null;
+    return rows.first;
   }
 
   Future<int> insertIntervention(int sessionId, String tierLevel) async {
@@ -250,5 +432,12 @@ class DatabaseService {
       },
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
+  }
+
+  String _dateKey(DateTime date) {
+    final local = date.toLocal();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    return '${local.year}-$month-$day';
   }
 }

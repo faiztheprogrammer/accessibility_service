@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../services/behavior_analytics_service.dart';
 import '../services/db_service.dart';
 import '../services/decision_engine.dart';
 import 'profile_screen.dart';
@@ -29,6 +30,7 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
   
   late MethodChannel _platformChannel;
   final DecisionEngine _decisionEngine = DecisionEngine();
+  final BehaviorAnalyticsService _analyticsService = BehaviorAnalyticsService();
 
   @override
   void initState() {
@@ -41,6 +43,7 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
 
   @override
   void dispose() {
+    _closeCurrentSession();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -49,6 +52,9 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       _refreshMonitorState();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _closeCurrentSession();
     }
   }
 
@@ -119,7 +125,7 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
             
             if (package != _lastAppPackage || _currentSessionId == null) {
               if (_currentSessionId != null) {
-                DatabaseService().updateSessionEndTime(_currentSessionId!);
+                await _closeCurrentSession();
               }
               _lastAppPackage = package;
               _currentSessionId = await DatabaseService().insertSession(appName);
@@ -184,6 +190,11 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
       source: result.source,
     );
 
+    await DatabaseService().updateSessionEndTime(sessionId);
+    await _analyticsService.calculateAndPersistDailySummary(
+      appCategory: appName,
+    );
+
     if (!mounted) return;
     setState(() {
       _isOfflineMode = result.hasError ||
@@ -206,6 +217,15 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
         _bannerColor = Colors.redAccent;
       }
     });
+  }
+
+  Future<void> _closeCurrentSession() async {
+    final sessionId = _currentSessionId;
+    if (sessionId == null) return;
+
+    await DatabaseService().updateSessionEndTime(sessionId);
+    _currentSessionId = null;
+    _lastAppPackage = '';
   }
 
   @override
