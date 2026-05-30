@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/db_service.dart';
-import '../services/api_service.dart';
+import '../services/decision_engine.dart';
 import 'profile_screen.dart';
 
 class MonitorScreen extends StatefulWidget {
@@ -28,6 +28,7 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
   String _lastAppPackage = '';
   
   late MethodChannel _platformChannel;
+  final DecisionEngine _decisionEngine = DecisionEngine();
 
   @override
   void initState() {
@@ -107,9 +108,10 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
           
           if (text.isNotEmpty || title.isNotEmpty) {
             final displayTitle = title.isNotEmpty ? title : text;
+            final appName = _getAppName(package);
             
             setState(() {
-              _currentApp = _getAppName(package);
+              _currentApp = appName;
               _lastContent = displayTitle;
               _bannerTitle = 'Analyzing: $displayTitle';
               _bannerColor = Colors.blueGrey;
@@ -120,17 +122,16 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
                 DatabaseService().updateSessionEndTime(_currentSessionId!);
               }
               _lastAppPackage = package;
-              _currentSessionId = await DatabaseService().insertSession(_currentApp);
+              _currentSessionId = await DatabaseService().insertSession(appName);
             }
-            
-            final contentId = await DatabaseService().insertContent(
+
+            await _analyzeContent(
+              appName,
               _currentSessionId!,
               title,
               channel,
               text,
             );
-            
-            _analyzeContent(title, channel, text, contentId);
           }
           break;
       }
@@ -149,6 +150,7 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
   }
 
   void _addLog(String app, String content, bool? isProductive, {String? source}) {
+    if (!mounted) return;
     setState(() {
       _logEntries.insert(0, {
         'app': app,
@@ -161,43 +163,46 @@ class _MonitorScreenState extends State<MonitorScreen> with WidgetsBindingObserv
     });
   }
 
-  Future<void> _analyzeContent(String title, String channel, String text, int contentId) async {
-    final result = await ApiService.evaluateContent(
+  Future<void> _analyzeContent(
+    String appName,
+    int sessionId,
+    String title,
+    String channel,
+    String text,
+  ) async {
+    final result = await _decisionEngine.evaluateAndPersist(
+      sessionId: sessionId,
       title: title,
       channel: channel,
       extractedText: text,
     );
-    
-    bool isProductive = false;
-    double relevanceScore = 0.0;
-    String source = 'api';
-    bool hasError = false;
-    
-    if (result != null) {
-      isProductive = result['is_productive'] ?? false;
-      relevanceScore = (result['relevance_score'] as num).toDouble();
-      source = result['source'] ?? 'api';
-      hasError = result['error'] == true;
-    }
-    
-    await DatabaseService().insertVerdict(contentId, relevanceScore, isProductive);
-    
-    final displayTitle = title.isNotEmpty ? title : (text.length > 50 ? text.substring(0, 50) : text);
-    _addLog(_currentApp, displayTitle, isProductive, source: source);
-    
+
+    _addLog(
+      appName,
+      result.title,
+      result.isProductive,
+      source: result.source,
+    );
+
+    if (!mounted) return;
     setState(() {
-      _isOfflineMode = hasError || source == 'ai_offline' || source == 'local_backup';
-      if (hasError || source == 'ai_offline') {
+      _isOfflineMode = result.hasError ||
+          result.source == 'ai_offline' ||
+          result.source == 'local_backup';
+      if (result.hasError || result.source == 'ai_offline') {
         _bannerTitle = 'AI Offline';
         _bannerMessage = 'Could not reach the evaluator over Wi-Fi.';
         _bannerColor = Colors.orange;
-      } else if (isProductive) {
-        _bannerTitle = 'Productive Content (${(relevanceScore * 100).toInt()}%)';
+      } else if (result.isProductive) {
+        _bannerTitle =
+            'Productive Content (${(result.relevanceScore * 100).toInt()}%)';
         _bannerMessage = 'Keep up the good work!';
         _bannerColor = Colors.green;
       } else {
         _bannerTitle = 'Distraction Detected!';
-        _bannerMessage = 'Consider returning to your goals';
+        _bannerMessage = result.interventionTier == null
+            ? 'Consider returning to your goals'
+            : 'Tier ${result.interventionTier} intervention logged';
         _bannerColor = Colors.redAccent;
       }
     });

@@ -13,8 +13,10 @@ class ApiService {
     required String title,
     required String channel,
     required String extractedText,
+    String? focusGoal,
   }) async {
-    final focusGoal = await DatabaseService().getFocusGoal();
+    final resolvedFocusGoal =
+        focusGoal ?? await DatabaseService().getFocusGoal();
 
     try {
       final response = await http.post(
@@ -24,7 +26,7 @@ class ApiService {
           'title': title,
           'channel': channel,
           'extracted_text': extractedText,
-          'career_goal': focusGoal,
+          'career_goal': resolvedFocusGoal,
         }),
       ).timeout(const Duration(seconds: 5));
 
