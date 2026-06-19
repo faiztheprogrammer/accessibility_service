@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'screens/monitor_screen.dart';
+import 'screens/login_screen.dart';
+import 'services/auth_service.dart';
 
 void main() {
   runApp(const AccessibilityApp());
@@ -29,7 +31,32 @@ class AccessibilityApp extends StatelessWidget {
           scrolledUnderElevation: 1,
         ),
       ),
-      home: const MonitorScreen(),
+      home: const _AuthGate(),
+    );
+  }
+}
+
+class _AuthGate extends StatefulWidget {
+  const _AuthGate();
+
+  @override
+  State<_AuthGate> createState() => _AuthGateState();
+}
+
+class _AuthGateState extends State<_AuthGate> {
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<bool>(
+      future: AuthService().isLoggedIn(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final loggedIn = snapshot.data ?? false;
+        return loggedIn ? const MonitorScreen() : const LoginScreen();
+      },
     );
   }
 }

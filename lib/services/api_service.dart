@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'auth_service.dart';
 import 'db_service.dart';
 
 class ApiService {
@@ -20,8 +21,9 @@ class ApiService {
     String appName = 'YouTube',
     String? focusGoal,
   }) async {
+    final userId = await AuthService().currentUserId();
     final resolvedFocusGoal =
-        focusGoal ?? await DatabaseService().getFocusGoal();
+        focusGoal ?? await DatabaseService().getFocusGoal(userId: userId);
 
     if (_geminiApiKey.isNotEmpty) {
       return _evaluateWithGemini(

@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 
 import 'api_service.dart';
+import 'auth_service.dart';
 import 'behavior_model_service.dart';
 import 'db_service.dart';
 
@@ -69,7 +70,8 @@ class DecisionEngine {
         ? normalizedTitle
         : _compactTitle(normalizedText);
 
-    final focusGoal = await _db.getFocusGoal();
+    final userId = await AuthService().currentUserId();
+    final focusGoal = await _db.getFocusGoal(userId: userId);
     final contentHash = _contentHash(
       title: normalizedTitle,
       channel: normalizedChannel,

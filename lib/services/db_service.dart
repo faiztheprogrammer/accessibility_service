@@ -1,6 +1,8 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:crypto/crypto.dart';
+import 'dart:convert';
 
 class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
@@ -22,10 +24,11 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: (db, version) async {
         await _createCoreTables(db);
         await _createFypTables(db);
+        await _createUsersTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
@@ -36,6 +39,9 @@ class DatabaseService {
         }
         if (oldVersion < 4) {
           await _upgradeFusionVerdicts(db);
+        }
+        if (oldVersion < 5) {
+          await _createUsersTable(db);
         }
       },
     );
@@ -172,6 +178,71 @@ class DatabaseService {
     await _addColumnIfMissing(db, 'Verdicts', 'decision_label', 'TEXT');
     await _addColumnIfMissing(db, 'Verdicts', 'decision_reason', 'TEXT');
     await _addColumnIfMissing(db, 'Verdicts', 'source', 'TEXT');
+  }
+
+  Future<void> _createUsersTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS Users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        email TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )
+    ''');
+  }
+
+  // ── Auth ──────────────────────────────────────────────────────────────────
+
+  String _hashPassword(String password) {
+    final bytes = utf8.encode(password);
+    return sha256.convert(bytes).toString();
+  }
+
+  Future<Map<String, dynamic>?> registerUser({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final db = await database;
+    final existing = await db.query(
+      'Users',
+      where: 'email = ?',
+      whereArgs: [email.toLowerCase().trim()],
+      limit: 1,
+    );
+    if (existing.isNotEmpty) return null; // email taken
+
+    final id = await db.insert('Users', {
+      'name': name.trim(),
+      'email': email.toLowerCase().trim(),
+      'password_hash': _hashPassword(password),
+      'created_at': DateTime.now().toIso8601String(),
+    });
+
+    return {'id': id, 'name': name.trim(), 'email': email.toLowerCase().trim()};
+  }
+
+  Future<Map<String, dynamic>?> loginUser({
+    required String email,
+    required String password,
+  }) async {
+    final db = await database;
+    final rows = await db.query(
+      'Users',
+      where: 'email = ? AND password_hash = ?',
+      whereArgs: [email.toLowerCase().trim(), _hashPassword(password)],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first;
+  }
+
+  Future<Map<String, dynamic>?> getUserById(int id) async {
+    final db = await database;
+    final rows = await db.query('Users', where: 'id = ?', whereArgs: [id], limit: 1);
+    if (rows.isEmpty) return null;
+    return rows.first;
   }
 
   Future<void> _addColumnIfMissing(
@@ -342,8 +413,11 @@ class DatabaseService {
     return rows.first;
   }
 
-  Future<String> getFocusGoal({String fallback = 'General Productivity'}) async {
-    final profile = await getUserProfile();
+  Future<String> getFocusGoal({
+    String fallback = 'General Productivity',
+    String userId = 'default_user',
+  }) async {
+    final profile = await getUserProfile(userId: userId);
     final goal = profile?['focus_goal']?.toString().trim();
     return goal == null || goal.isEmpty ? fallback : goal;
   }
@@ -442,6 +516,22 @@ class DatabaseService {
 
     if (rows.isEmpty) return null;
     return rows.first;
+  }
+
+  Future<List<Map<String, dynamic>>> getBehavioralMetricsForRange({
+    required DateTime from,
+    required DateTime to,
+    String appCategory = 'YouTube',
+  }) async {
+    final db = await database;
+    final fromKey = _dateKey(from);
+    final toKey = _dateKey(to);
+    return await db.query(
+      'BehavioralMetrics',
+      where: 'metric_date >= ? AND metric_date <= ? AND app_category = ?',
+      whereArgs: [fromKey, toKey, appCategory],
+      orderBy: 'metric_date ASC',
+    );
   }
 
   Future<int> insertIntervention(int sessionId, String tierLevel) async {

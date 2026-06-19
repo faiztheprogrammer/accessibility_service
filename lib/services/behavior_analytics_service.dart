@@ -187,6 +187,31 @@ class BehaviorAnalyticsService {
     );
   }
 
+  Future<List<BehaviorSummary>> getStoredSummariesForRange({
+    required DateTime from,
+    required DateTime to,
+    String appCategory = 'YouTube',
+  }) async {
+    final rows = await _db.getBehavioralMetricsForRange(
+      from: from,
+      to: to,
+      appCategory: appCategory,
+    );
+    return rows.map((row) => BehaviorSummary(
+      metricDate: row['metric_date']?.toString() ?? _dateKey(from),
+      appCategory: row['app_category']?.toString() ?? appCategory,
+      avgSessionDuration: _asDouble(row['avg_session_duration']),
+      nightUsage: row['night_usage'] == 1 || row['night_usage'] == true,
+      sessionFrequency: _asInt(row['session_frequency']),
+      totalTimeToday: _asInt(row['total_time_today']),
+      productiveCount: _asInt(row['productive_count']),
+      unproductiveCount: _asInt(row['unproductive_count']),
+      distractionRatio: _asDouble(row['distraction_ratio']),
+      focusScore: _asDouble(row['focus_score']),
+      topDistractingApp: row['top_distracting_app']?.toString(),
+    )).toList();
+  }
+
   Future<BehaviorSummary?> getStoredDailySummary({
     DateTime? date,
     String appCategory = 'YouTube',

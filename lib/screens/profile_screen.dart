@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../services/db_service.dart';
+import '../services/auth_service.dart';
+import 'login_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -45,7 +47,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadProfile() async {
-    final profile = await DatabaseService().getUserProfile();
+    final userId = await AuthService().currentUserId();
+    final profile = await DatabaseService().getUserProfile(userId: userId);
     if (!mounted) return;
     setState(() {
       _goalController.text = profile?['focus_goal']?.toString() ?? '';
@@ -89,7 +92,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _savedSuccess = false;
     });
 
-    await DatabaseService().upsertUserProfile(goal);
+    final userId = await AuthService().currentUserId();
+    await DatabaseService().upsertUserProfile(goal, userId: userId);
     if (!mounted) return;
 
     setState(() {
@@ -303,8 +307,81 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                 ),
+
+                // ── Account ────────────────────────────────────────────────
+                const SizedBox(height: 32),
+                Text(
+                  'ACCOUNT',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: cs.outline,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                        color: cs.outlineVariant.withValues(alpha: 0.5)),
+                  ),
+                  child: ListTile(
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.red.withValues(alpha: 0.10),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(Icons.logout_rounded,
+                          size: 20, color: Colors.red.shade700),
+                    ),
+                    title: const Text('Sign Out',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: Colors.red)),
+                    subtitle: Text('You will be returned to the login screen',
+                        style: TextStyle(
+                            fontSize: 12, color: cs.onSurfaceVariant)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                    onTap: _signOut,
+                  ),
+                ),
+                const SizedBox(height: 20),
               ],
             ),
+    );
+  }
+
+  Future<void> _signOut() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sign Out'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red.shade700),
+            child: const Text('Sign Out'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await AuthService().logout();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
     );
   }
 }
