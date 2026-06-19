@@ -16,7 +16,6 @@ class MediaMonitorService : NotificationListenerService() {
     private var activeControllers: List<MediaController> = emptyList()
     private val controllerCallbacks = mutableMapOf<MediaController, MediaController.Callback>()
     private var lastBroadcastSignature = ""
-    private var lastBroadcastAt = 0L
 
     private val sessionListener = MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
         Log.d("MediaMonitor", "Active sessions changed")
@@ -116,14 +115,11 @@ class MediaMonitorService : NotificationListenerService() {
         val channel = artist.ifEmpty { album }
         val packageName = controller.packageName ?: "media_session"
         val signature = "$packageName|$title|$channel"
-        val now = System.currentTimeMillis()
-
-        if (signature == lastBroadcastSignature && now - lastBroadcastAt < 2_000L) {
+        if (signature == lastBroadcastSignature) {
             return
         }
 
         lastBroadcastSignature = signature
-        lastBroadcastAt = now
 
         Log.i("MediaMonitor", "Media update ($reason): title='$title', channel='$channel', package='$packageName'")
 

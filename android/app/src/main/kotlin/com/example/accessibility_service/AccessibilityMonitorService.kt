@@ -9,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.graphics.Rect
@@ -16,9 +17,6 @@ import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.app.NotificationCompat
-import io.flutter.embedding.engine.FlutterEngine
-import io.flutter.embedding.engine.dart.DartExecutor
-import io.flutter.plugin.common.MethodChannel
 import java.util.concurrent.Executors
 
 class AccessibilityMonitorService : AccessibilityService() {
@@ -27,18 +25,19 @@ class AccessibilityMonitorService : AccessibilityService() {
         const val CHANNEL_ID = "accessibility_monitor_service"
         const val NOTIFICATION_ID = 101
         const val FLUTTER_CHANNEL = "com.example.accessibility_service/monitor"
+        const val ACTION_FLUTTER_EVENT = "com.example.accessibility_service.FLUTTER_EVENT"
+        const val ACTION_UPDATE_SERVICE_NOTIFICATION =
+            "com.example.accessibility_service.UPDATE_SERVICE_NOTIFICATION"
         private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
         private const val PLAY_SHORT_SUFFIX = " - play Short"
         private const val SHORTS_SCAN_THROTTLE_MS = 350L
-        private const val SHORTS_DUPLICATE_WINDOW_MS = 1_500L
+        private const val SHORTS_DUPLICATE_WINDOW_MS = 10_000L
         private const val SHORTS_MAX_SCAN_NODES = 500
         private const val SHORTS_FOOTER_ID = "reel_player_footer_container"
         private const val SHORTS_ROOT_ID = "reel_watch_fragment_root"
         private const val MEDIA_SESSION_GRACE_MS = 2_000L
     }
 
-    private lateinit var methodChannel: MethodChannel
-    private lateinit var flutterEngine: FlutterEngine
     private val executor = Executors.newSingleThreadExecutor()
 
     private val handler = Handler(Looper.getMainLooper())
@@ -57,36 +56,40 @@ class AccessibilityMonitorService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.cancel(102)
+        manager.cancel(201)
     }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         Log.d("AccessibilityService", "Service connected")
 
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        manager.cancel(102)
+        manager.cancel(201)
+
         val notification = createNotification("Monitoring Active", "Watching your productivity...")
         startForeground(NOTIFICATION_ID, notification)
         ensureAccessibilityEventTypes()
 
+        val filter = IntentFilter().apply {
+            addAction("com.example.accessibility_service.MEDIA_UPDATE")
+            addAction(ACTION_UPDATE_SERVICE_NOTIFICATION)
+        }
         try {
-            flutterEngine = FlutterEngine(applicationContext)
-            flutterEngine.dartExecutor.executeDartEntrypoint(
-                DartExecutor.DartEntrypoint.createDefault()
-            )
-            methodChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, FLUTTER_CHANNEL)
-
-            val filter = IntentFilter("com.example.accessibility_service.MEDIA_UPDATE")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 registerReceiver(mediaUpdateReceiver, filter, Context.RECEIVER_EXPORTED)
             } else {
                 registerReceiver(mediaUpdateReceiver, filter)
             }
             receiverRegistered = true
-
-            sendToFlutter("service_status", mapOf("isRunning" to true, "status" to "Connected"))
-            Log.i("AccessibilityService", "Service status sent to Flutter: isRunning=true")
         } catch (e: Exception) {
-            Log.e("AccessibilityService", "Flutter engine init error: ${e.message}")
+            Log.e("AccessibilityService", "Receiver init error: ${e.message}")
         }
+
+        sendToFlutter("service_status", mapOf("isRunning" to true, "status" to "Connected"))
+        Log.i("AccessibilityService", "Service status broadcast: isRunning=true")
     }
 
     private fun ensureAccessibilityEventTypes() {
@@ -106,12 +109,16 @@ class AccessibilityMonitorService : AccessibilityService() {
 
     private fun createNotificationChannel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(NotificationManager::class.java)
             val serviceChannel = NotificationChannel(
                 CHANNEL_ID,
                 "App Content Monitor Service",
                 NotificationManager.IMPORTANCE_LOW
-            )
-            val manager = getSystemService(NotificationManager::class.java)
+            ).apply {
+                description = "Keeps background content monitoring active"
+                setSound(null, null)
+            }
+
             manager.createNotificationChannel(serviceChannel)
         }
     }
@@ -122,10 +129,12 @@ class AccessibilityMonitorService : AccessibilityService() {
             .setContentText(message)
             .setSmallIcon(android.R.drawable.ic_dialog_info)
             .setOngoing(true)
+            .setSilent(true)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
     }
 
-    private fun updateNotification(title: String, message: String) {
+    private fun updateForegroundNotification(message: String, title: String = "Latest YouTube Title") {
         val notification = createNotification(title, message)
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.notify(NOTIFICATION_ID, notification)
@@ -220,12 +229,7 @@ class AccessibilityMonitorService : AccessibilityService() {
             lastCapturedTitle = shortsContent.title
 
             Log.i("ShortsFallback", "Detected YouTube Short: ${shortsContent.title}")
-
-            if (isLikelyDistraction(shortsContent.title)) {
-                updateNotification("Distraction Detected!", shortsContent.title)
-            } else {
-                updateNotification("Productive Mode", shortsContent.title)
-            }
+            updateForegroundNotification(shortsContent.title)
 
             val extractedText = listOf(
                 shortsContent.title,
@@ -294,11 +298,23 @@ class AccessibilityMonitorService : AccessibilityService() {
         val text = value.replace(Regex("\\s+"), " ").trim()
         if (!text.endsWith(PLAY_SHORT_SUFFIX)) return null
 
-        val title = text.removeSuffix(PLAY_SHORT_SUFFIX).trim()
+        val title = stripTrailingViewCount(text.removeSuffix(PLAY_SHORT_SUFFIX).trim())
         if (title.isBlank()) return null
         if (isProgressOrTimestampText(title.lowercase())) return null
 
         return title
+    }
+
+    private fun stripTrailingViewCount(value: String): String {
+        return value
+            .replace(
+                Regex(
+                    """,?\s*\d+(?:[.,]\d+)?\s*(?:k|m|b|thousand|million|billion)?\s+views$""",
+                    RegexOption.IGNORE_CASE
+                ),
+                ""
+            )
+            .trim()
     }
 
     private fun findPlayShortTitle(
@@ -329,7 +345,8 @@ class AccessibilityMonitorService : AccessibilityService() {
         val bounds: Rect,
         val order: Int,
         val className: String,
-        val clickable: Boolean
+        val clickable: Boolean,
+        val hasImageDescendant: Boolean
     )
 
     private fun extractShortsFooterTitle(root: AccessibilityNodeInfo): String? {
@@ -349,21 +366,30 @@ class AccessibilityMonitorService : AccessibilityService() {
         val channelBottom = candidates
             .filter { it.text.startsWith("@") }
             .maxOfOrNull { it.bounds.bottom }
-        if (channelBottom == null) {
-            Log.d("ShortsDebug", "Footer fallback skipped: channel row not found")
-            return null
-        }
 
         val titleCandidates = candidates
-            .filter { it.bounds.top >= channelBottom }
-            .filter { it.bounds.left < 592 && it.bounds.right <= 592 }
+            .filter { candidate ->
+                channelBottom == null || candidate.bounds.top >= channelBottom
+            }
+            .filter { it.bounds.left <= 48 && it.bounds.right <= 592 }
+            .filter { !isRelatedVideoLinkCandidate(it) }
             .filter { isShortsFooterTitleCandidate(it.text) }
             .sortedWith(compareBy<FooterTitleCandidate> { it.bounds.top }.thenBy { it.order })
 
         val prominentMainTitle = titleCandidates.firstOrNull { isProminentMainTitleRow(it) }
         if (prominentMainTitle != null) return prominentMainTitle.text
 
-        Log.d("ShortsDebug", "Footer fallback candidates=${titleCandidates.size}")
+        if (channelBottom == null) {
+            val bottomTitleCandidate = titleCandidates
+                .filter { it.clickable && it.className.lowercase().contains("viewgroup") }
+                .maxByOrNull { it.bounds.top }
+            if (bottomTitleCandidate != null) {
+                Log.d("ShortsDebug", "Footer fallback used bottom title without channel row")
+                return bottomTitleCandidate.text
+            }
+        }
+
+        Log.d("ShortsDebug", "Footer fallback candidates=${titleCandidates.size}, channelBottom=$channelBottom")
         return titleCandidates
             .firstOrNull()
             ?.text
@@ -374,7 +400,15 @@ class AccessibilityMonitorService : AccessibilityService() {
         return candidate.clickable &&
             lowerClass.contains("viewgroup") &&
             !lowerClass.contains("button") &&
+            !candidate.hasImageDescendant &&
             candidate.bounds.left <= 48 &&
+            candidate.bounds.width() >= 360
+    }
+
+    private fun isRelatedVideoLinkCandidate(candidate: FooterTitleCandidate): Boolean {
+        return candidate.clickable &&
+            candidate.hasImageDescendant &&
+            candidate.bounds.left <= 8 &&
             candidate.bounds.width() >= 360
     }
 
@@ -432,7 +466,8 @@ class AccessibilityMonitorService : AccessibilityService() {
                         bounds = Rect(bounds),
                         order = order,
                         className = node.className?.toString().orEmpty(),
-                        clickable = node.isClickable
+                        clickable = node.isClickable,
+                        hasImageDescendant = hasImageDescendant(node, 0)
                     )
                 )
             }
@@ -443,6 +478,21 @@ class AccessibilityMonitorService : AccessibilityService() {
             collectFooterTitleCandidates(child, candidates, visitedCount)
             child.recycle()
         }
+    }
+
+    private fun hasImageDescendant(node: AccessibilityNodeInfo, depth: Int): Boolean {
+        if (depth > 3) return false
+        val className = node.className?.toString()?.lowercase().orEmpty()
+        if (className.contains("imageview")) return true
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val found = hasImageDescendant(child, depth + 1)
+            child.recycle()
+            if (found) return true
+        }
+
+        return false
     }
 
     private fun isShortsFooterTitleCandidate(value: String): Boolean {
@@ -548,15 +598,6 @@ class AccessibilityMonitorService : AccessibilityService() {
         return System.currentTimeMillis() - lastMediaTitleAt < MEDIA_SESSION_GRACE_MS
     }
 
-    private fun isLikelyDistraction(text: String): Boolean {
-        val lower = text.lowercase()
-        val distractKeywords = listOf("funny", "prank", "song", "music", "trailer", "roast", "shorts", "gaming")
-        val productiveKeywords = listOf("tutorial", "code", "programming", "flutter", "c++", "how to", "career")
-
-        if (productiveKeywords.any { lower.contains(it) }) return false
-        return distractKeywords.any { lower.contains(it) }
-    }
-
     private fun collectTextsRecursively(node: AccessibilityNodeInfo, list: MutableList<String>) {
         node.text?.toString()?.trim()?.takeIf { it.isNotEmpty() }?.let { list.add(it) }
         for (i in 0 until node.childCount) {
@@ -567,9 +608,28 @@ class AccessibilityMonitorService : AccessibilityService() {
     private fun sendToFlutter(method: String, data: Any) {
         handler.post {
             try {
-                if (::methodChannel.isInitialized) {
-                    methodChannel.invokeMethod(method, data)
+                val intent = Intent(ACTION_FLUTTER_EVENT).setPackage(packageName)
+                intent.putExtra("method", method)
+
+                if (data is Map<*, *>) {
+                    val bundle = Bundle()
+                    data.forEach { (key, value) ->
+                        val stringKey = key?.toString() ?: return@forEach
+                        when (value) {
+                            is String -> bundle.putString(stringKey, value)
+                            is Boolean -> bundle.putBoolean(stringKey, value)
+                            is Int -> bundle.putInt(stringKey, value)
+                            is Long -> bundle.putLong(stringKey, value)
+                            is Double -> bundle.putDouble(stringKey, value)
+                            is Float -> bundle.putFloat(stringKey, value)
+                            null -> bundle.putString(stringKey, null)
+                            else -> bundle.putString(stringKey, value.toString())
+                        }
+                    }
+                    intent.putExtra("data", bundle)
                 }
+
+                sendBroadcast(intent)
             } catch (e: Exception) {
                 Log.e("SendToFlutter", "Error: ${e.message}")
             }
@@ -579,6 +639,14 @@ class AccessibilityMonitorService : AccessibilityService() {
     private val mediaUpdateReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             intent ?: return
+            if (intent.action == ACTION_UPDATE_SERVICE_NOTIFICATION) {
+                val notificationTitle = intent.getStringExtra("notification_title")
+                    ?: "Monitoring Active"
+                val notificationText = intent.getStringExtra("notification_text")
+                    ?: "Watching your productivity..."
+                updateForegroundNotification(notificationText, notificationTitle)
+                return
+            }
 
             val title = intent.getStringExtra("title") ?: return
             val channel = intent.getStringExtra("channel") ?: ""
@@ -590,12 +658,7 @@ class AccessibilityMonitorService : AccessibilityService() {
             lastMediaTitleAt = System.currentTimeMillis()
 
             Log.i("MEDIA_MONITOR", "Media session detected: $title by $channel")
-
-            if (isLikelyDistraction(title)) {
-                updateNotification("Distraction Detected!", title)
-            } else {
-                updateNotification("Productive Mode", title)
-            }
+            updateForegroundNotification(title)
 
             val payload = mapOf(
                 "package" to packageName,

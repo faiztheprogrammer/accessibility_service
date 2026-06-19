@@ -22,3 +22,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - machine_learning/exported_models/studentlife_behavior_model.json

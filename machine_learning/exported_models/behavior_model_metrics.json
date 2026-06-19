@@ -1,0 +1,25 @@
+{
+  "accuracy": 0.5225785691301084,
+  "precision_productive": 0.43906919779546844,
+  "recall_productive": 0.7846785225718195,
+  "f1_productive": 0.563070580151173,
+  "confusion_matrix": [
+    [
+      2004,
+      3664
+    ],
+    [
+      787,
+      2868
+    ]
+  ],
+  "dataset_rows": 37737,
+  "train_rows": 28414,
+  "test_rows": 9323,
+  "labeling_note": "Labels were loaded from machine_learning/labeling/app_labels.csv. No app taxonomy or hardcoded productivity rules were used during training.",
+  "split_strategy": "Train/test split is grouped by app_name so the same app does not appear in both training and testing.",
+  "label_counts": {
+    "0": 17904,
+    "1": 19833
+  }
+}

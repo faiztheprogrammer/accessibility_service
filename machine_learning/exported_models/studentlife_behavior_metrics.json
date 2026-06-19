@@ -1,0 +1,27 @@
+{
+  "accuracy": 0.9311830946753789,
+  "precision_high_risk": 0.6759670259987318,
+  "recall_high_risk": 0.6899676375404531,
+  "f1_high_risk": 0.6828955797565663,
+  "confusion_matrix": [
+    [
+      12330,
+      511
+    ],
+    [
+      479,
+      1066
+    ]
+  ],
+  "dataset_rows": 65403,
+  "train_rows": 51017,
+  "test_rows": 14386,
+  "train_users": 39,
+  "test_users": 10,
+  "label_counts": {
+    "0": 58887,
+    "1": 6516
+  },
+  "split_strategy": "Grouped by user_id so the same student is not in both train and test.",
+  "labeling_note": "Labels are weak behavioral-risk labels derived from StudentLife EMA study-productivity responses when available, otherwise from usage-pattern risk rules. This model does not classify content relevance; Gemini handles semantic content relevance."
+}

@@ -47,6 +47,13 @@ build/
 doc/api/
 /coverage/
 
+# Python ML environment
+machine_learning/.venv/
+
+# Local secrets and API keys
+config/app_secrets.json
+config/*.local.json
+
 # -------------------------------------------------------------------
 # Android Specific (The Culprits)
 # -------------------------------------------------------------------

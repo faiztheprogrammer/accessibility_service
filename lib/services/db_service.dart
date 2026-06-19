@@ -22,7 +22,7 @@ class DatabaseService {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: (db, version) async {
         await _createCoreTables(db);
         await _createFypTables(db);
@@ -33,6 +33,9 @@ class DatabaseService {
         }
         if (oldVersion < 3) {
           await _upgradeBehavioralMetrics(db);
+        }
+        if (oldVersion < 4) {
+          await _upgradeFusionVerdicts(db);
         }
       },
     );
@@ -66,6 +69,12 @@ class DatabaseService {
         content_id INTEGER,
         relevance_score REAL,
         is_productive BOOLEAN,
+        content_score REAL,
+        behavior_risk_score REAL,
+        final_risk_score REAL,
+        decision_label TEXT,
+        decision_reason TEXT,
+        source TEXT,
         timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         FOREIGN KEY (content_id) REFERENCES Content (id)
       )
@@ -156,6 +165,15 @@ class DatabaseService {
     await _addColumnIfMissing(db, 'BehavioralMetrics', 'updated_at', 'TEXT');
   }
 
+  Future<void> _upgradeFusionVerdicts(Database db) async {
+    await _addColumnIfMissing(db, 'Verdicts', 'content_score', 'REAL');
+    await _addColumnIfMissing(db, 'Verdicts', 'behavior_risk_score', 'REAL');
+    await _addColumnIfMissing(db, 'Verdicts', 'final_risk_score', 'REAL');
+    await _addColumnIfMissing(db, 'Verdicts', 'decision_label', 'TEXT');
+    await _addColumnIfMissing(db, 'Verdicts', 'decision_reason', 'TEXT');
+    await _addColumnIfMissing(db, 'Verdicts', 'source', 'TEXT');
+  }
+
   Future<void> _addColumnIfMissing(
     Database db,
     String table,
@@ -172,7 +190,10 @@ class DatabaseService {
   // Session Management
   Future<int> insertSession(String appName) async {
     final db = await database;
-    return await db.insert('AppSessions', {'app_name': appName});
+    return await db.insert('AppSessions', {
+      'app_name': appName,
+      'start_time': DateTime.now().toIso8601String(),
+    });
   }
 
   Future<void> updateSessionEndTime(int sessionId) async {
@@ -200,16 +221,18 @@ class DatabaseService {
 
   Future<List<Map<String, dynamic>>> getSessionsForDate(DateTime date) async {
     final db = await database;
-    final day = _dateKey(date);
-    return await db.rawQuery(
+    final rows = await db.rawQuery(
       '''
       SELECT *
       FROM AppSessions
-      WHERE substr(start_time, 1, 10) = ?
       ORDER BY start_time ASC
       ''',
-      [day],
     );
+
+    return rows.where((row) {
+      final startTime = _parseStoredTimestamp(row['start_time']);
+      return startTime != null && _isSameLocalDate(startTime, date);
+    }).toList();
   }
 
   // Content Logging
@@ -220,16 +243,34 @@ class DatabaseService {
       'title': title,
       'channel': channel,
       'extracted_text': text,
+      'timestamp': DateTime.now().toIso8601String(),
     });
   }
 
   // Verdict Logging
-  Future<void> insertVerdict(int contentId, double score, bool isProductive) async {
+  Future<void> insertVerdict(
+    int contentId,
+    double score,
+    bool isProductive, {
+    double? contentScore,
+    double? behaviorRiskScore,
+    double? finalRiskScore,
+    String? decisionLabel,
+    String? decisionReason,
+    String? source,
+  }) async {
     final db = await database;
     await db.insert('Verdicts', {
       'content_id': contentId,
       'relevance_score': score,
       'is_productive': isProductive ? 1 : 0,
+      'content_score': contentScore ?? score,
+      'behavior_risk_score': behaviorRiskScore,
+      'final_risk_score': finalRiskScore,
+      'decision_label': decisionLabel,
+      'decision_reason': decisionReason,
+      'source': source,
+      'timestamp': DateTime.now().toIso8601String(),
     });
   }
 
@@ -237,7 +278,9 @@ class DatabaseService {
   Future<List<Map<String, dynamic>>> getRecentContent() async {
     final db = await database;
     return await db.rawQuery('''
-      SELECT c.*, v.relevance_score, v.is_productive, s.app_name
+      SELECT c.*, v.relevance_score, v.is_productive, v.content_score,
+             v.behavior_risk_score, v.final_risk_score, v.decision_label,
+             v.decision_reason, v.source, s.app_name
       FROM Content c
       LEFT JOIN Verdicts v ON c.id = v.content_id
       JOIN AppSessions s ON c.session_id = s.id
@@ -250,18 +293,25 @@ class DatabaseService {
     DateTime date,
   ) async {
     final db = await database;
-    final day = _dateKey(date);
-    return await db.rawQuery(
+    final rows = await db.rawQuery(
       '''
-      SELECT c.*, v.relevance_score, v.is_productive, s.app_name
+      SELECT c.*, c.timestamp AS content_timestamp,
+             v.relevance_score, v.is_productive, v.content_score,
+             v.behavior_risk_score, v.final_risk_score, v.decision_label,
+             v.decision_reason, v.source, s.app_name
       FROM Content c
       LEFT JOIN Verdicts v ON c.id = v.content_id
       JOIN AppSessions s ON c.session_id = s.id
-      WHERE substr(c.timestamp, 1, 10) = ?
       ORDER BY c.timestamp ASC
       ''',
-      [day],
     );
+
+    return rows.where((row) {
+      final contentTime = _parseStoredTimestamp(
+        row['content_timestamp'] ?? row['timestamp'],
+      );
+      return contentTime != null && _isSameLocalDate(contentTime, date);
+    }).toList();
   }
 
   Future<void> upsertUserProfile(String focusGoal, {String userId = 'default_user'}) async {
@@ -439,5 +489,38 @@ class DatabaseService {
     final month = local.month.toString().padLeft(2, '0');
     final day = local.day.toString().padLeft(2, '0');
     return '${local.year}-$month-$day';
+  }
+
+  DateTime? _parseStoredTimestamp(dynamic value) {
+    final text = value?.toString().trim();
+    if (text == null || text.isEmpty) return null;
+
+    final parsed = DateTime.tryParse(text);
+    if (parsed == null) return null;
+
+    // SQLite CURRENT_TIMESTAMP writes "yyyy-MM-dd HH:mm:ss" in UTC. New rows
+    // use local ISO timestamps with "T", so only convert legacy rows.
+    if (text.contains(' ') && !text.endsWith('Z')) {
+      return DateTime.utc(
+        parsed.year,
+        parsed.month,
+        parsed.day,
+        parsed.hour,
+        parsed.minute,
+        parsed.second,
+        parsed.millisecond,
+        parsed.microsecond,
+      ).toLocal();
+    }
+
+    return parsed.toLocal();
+  }
+
+  bool _isSameLocalDate(DateTime timestamp, DateTime date) {
+    final localTimestamp = timestamp.toLocal();
+    final localDate = date.toLocal();
+    return localTimestamp.year == localDate.year &&
+        localTimestamp.month == localDate.month &&
+        localTimestamp.day == localDate.day;
   }
 }

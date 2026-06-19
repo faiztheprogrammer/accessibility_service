@@ -98,19 +98,41 @@ class BehaviorAnalyticsService {
     final matchingVerdicts = contentVerdicts
         .where((row) => _matchesAppCategory(row['app_name'], appCategory))
         .toList();
+    final uniqueVerdicts = _dedupeVerdicts(matchingVerdicts);
 
-    var totalSeconds = 0;
     var nightUsage = false;
     final now = DateTime.now();
+    final contentTimesBySession = <int, List<DateTime>>{};
 
+    for (final row in matchingVerdicts) {
+      final sessionId = _asInt(row['session_id']);
+      final contentTime = _parseDate(row['timestamp']);
+      if (sessionId > 0 && contentTime != null) {
+        contentTimesBySession.putIfAbsent(sessionId, () => []).add(contentTime);
+      }
+      if (contentTime != null && _isNightHour(contentTime)) {
+        nightUsage = true;
+      }
+    }
+
+    final intervals = <_SessionInterval>[];
     for (final session in matchingSessions) {
+      final sessionId = _asInt(session['id']);
       final start = _parseDate(session['start_time']);
       if (start == null) continue;
 
-      final end = _parseDate(session['end_time']) ?? now;
-      final duration = end.difference(start);
-      if (!duration.isNegative) {
-        totalSeconds += duration.inSeconds;
+      final contentTimes = contentTimesBySession[sessionId] ?? const [];
+      final explicitEnd = _parseDate(session['end_time']);
+      final lastContent = _latestDate(contentTimes);
+      final end = _boundedSessionEnd(
+        start: start,
+        explicitEnd: explicitEnd,
+        lastContent: lastContent,
+        now: now,
+      );
+
+      if (end.isAfter(start)) {
+        intervals.add(_SessionInterval(start, end));
       }
 
       if (_isNightHour(start)) {
@@ -118,11 +140,17 @@ class BehaviorAnalyticsService {
       }
     }
 
+    final mergedIntervals = _mergeIntervals(intervals);
+    final totalSeconds = mergedIntervals.fold<int>(
+      0,
+      (sum, interval) => sum + interval.end.difference(interval.start).inSeconds,
+    );
+
     var productiveCount = 0;
     var unproductiveCount = 0;
     final unproductiveByApp = <String, int>{};
 
-    for (final row in matchingVerdicts) {
+    for (final row in uniqueVerdicts) {
       final isProductive = row['is_productive'];
       if (isProductive == null) continue;
 
@@ -133,27 +161,23 @@ class BehaviorAnalyticsService {
         final appName = row['app_name']?.toString() ?? appCategory;
         unproductiveByApp[appName] = (unproductiveByApp[appName] ?? 0) + 1;
       }
-
-      final contentTime = _parseDate(row['timestamp']);
-      if (contentTime != null && _isNightHour(contentTime)) {
-        nightUsage = true;
-      }
     }
 
     final totalVerdicts = productiveCount + unproductiveCount;
     final distractionRatio =
         totalVerdicts == 0 ? 0.0 : unproductiveCount / totalVerdicts;
     final focusScore = totalVerdicts == 0 ? 0.0 : 1.0 - distractionRatio;
-    final avgSessionDuration = matchingSessions.isEmpty
+    final sessionFrequency = mergedIntervals.length;
+    final avgSessionDuration = sessionFrequency == 0
         ? 0.0
-        : totalSeconds / matchingSessions.length;
+        : totalSeconds / sessionFrequency;
 
     return BehaviorSummary(
       metricDate: metricDate,
       appCategory: appCategory,
       avgSessionDuration: avgSessionDuration,
       nightUsage: nightUsage,
-      sessionFrequency: matchingSessions.length,
+      sessionFrequency: sessionFrequency,
       totalTimeToday: totalSeconds,
       productiveCount: productiveCount,
       unproductiveCount: unproductiveCount,
@@ -195,9 +219,85 @@ class BehaviorAnalyticsService {
     return app == category || app.contains(category);
   }
 
+  List<Map<String, dynamic>> _dedupeVerdicts(
+    List<Map<String, dynamic>> verdicts,
+  ) {
+    final latestByContent = <String, Map<String, dynamic>>{};
+    for (final row in verdicts) {
+      final title = row['title']?.toString().trim().toLowerCase() ?? '';
+      if (title.isEmpty) continue;
+
+      final channel = row['channel']?.toString().trim().toLowerCase() ?? '';
+      final key = '$channel|$title';
+      final currentTime = _parseDate(row['timestamp']);
+      final previous = latestByContent[key];
+      final previousTime = _parseDate(previous?['timestamp']);
+
+      if (previous == null ||
+          (currentTime != null &&
+              (previousTime == null || currentTime.isAfter(previousTime)))) {
+        latestByContent[key] = row;
+      }
+    }
+    return latestByContent.values.toList();
+  }
+
+  DateTime _boundedSessionEnd({
+    required DateTime start,
+    required DateTime? explicitEnd,
+    required DateTime? lastContent,
+    required DateTime now,
+  }) {
+    var end = explicitEnd;
+
+    if (end == null && lastContent != null) {
+      end = lastContent.add(const Duration(minutes: 2));
+    }
+
+    end ??= start.add(const Duration(minutes: 2));
+    if (end.isAfter(now)) end = now;
+
+    final maxEnd = start.add(const Duration(hours: 2));
+    if (end.isAfter(maxEnd)) end = maxEnd;
+
+    return end;
+  }
+
+  List<_SessionInterval> _mergeIntervals(List<_SessionInterval> intervals) {
+    if (intervals.isEmpty) return const [];
+
+    final sorted = [...intervals]..sort((a, b) => a.start.compareTo(b.start));
+    final merged = <_SessionInterval>[sorted.first];
+
+    for (final interval in sorted.skip(1)) {
+      final previous = merged.last;
+      if (!interval.start.isAfter(previous.end)) {
+        if (interval.end.isAfter(previous.end)) {
+          merged[merged.length - 1] = _SessionInterval(
+            previous.start,
+            interval.end,
+          );
+        }
+      } else {
+        merged.add(interval);
+      }
+    }
+
+    return merged;
+  }
+
   bool _isNightHour(DateTime dateTime) {
     final hour = dateTime.toLocal().hour;
     return hour >= 22 || hour < 6;
+  }
+
+  DateTime? _latestDate(List<DateTime> dates) {
+    if (dates.isEmpty) return null;
+    var latest = dates.first;
+    for (final date in dates.skip(1)) {
+      if (date.isAfter(latest)) latest = date;
+    }
+    return latest;
   }
 
   String? _topDistractingApp(Map<String, int> counts) {
@@ -238,4 +338,11 @@ class BehaviorAnalyticsService {
     final day = local.day.toString().padLeft(2, '0');
     return '${local.year}-$month-$day';
   }
+}
+
+class _SessionInterval {
+  final DateTime start;
+  final DateTime end;
+
+  const _SessionInterval(this.start, this.end);
 }
