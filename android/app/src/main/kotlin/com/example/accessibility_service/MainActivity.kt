@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
@@ -17,6 +18,14 @@ class MainActivity : FlutterActivity() {
     private val ACTION_FLUTTER_EVENT = "com.example.accessibility_service.FLUTTER_EVENT"
     private val ACTION_UPDATE_SERVICE_NOTIFICATION =
         "com.example.accessibility_service.UPDATE_SERVICE_NOTIFICATION"
+
+    companion object {
+        const val PREFS_NAME = "focusguard_prefs"
+        const val PREF_REELS_BLOCK = "reels_block_enabled"
+    }
+
+    private fun prefs(): SharedPreferences =
+        getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
     private var methodChannel: MethodChannel? = null
     private var eventReceiverRegistered = false
 
@@ -56,6 +65,14 @@ class MainActivity : FlutterActivity() {
                     }
                     sendBroadcast(intent)
                     result.success(null)
+                }
+                "set_reels_block_enabled" -> {
+                    val enabled = call.arguments as? Boolean ?: true
+                    prefs().edit().putBoolean(PREF_REELS_BLOCK, enabled).apply()
+                    result.success(null)
+                }
+                "get_reels_block_enabled" -> {
+                    result.success(prefs().getBoolean(PREF_REELS_BLOCK, true))
                 }
                 else -> result.notImplemented()
             }

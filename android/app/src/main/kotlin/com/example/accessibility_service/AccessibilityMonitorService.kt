@@ -36,9 +36,11 @@ class AccessibilityMonitorService : AccessibilityService() {
         private const val SHORTS_FOOTER_ID = "reel_player_footer_container"
         private const val SHORTS_ROOT_ID = "reel_watch_fragment_root"
         private const val MEDIA_SESSION_GRACE_MS = 2_000L
+        private const val INSTAGRAM_PACKAGE = "com.instagram.android"
     }
 
     private val executor = Executors.newSingleThreadExecutor()
+    private val instagramReelsBlocker by lazy { InstagramReelsBlocker(this) }
 
     private val handler = Handler(Looper.getMainLooper())
     private var extractRunnable: Runnable? = null
@@ -144,6 +146,13 @@ class AccessibilityMonitorService : AccessibilityService() {
         event ?: return
 
         val packageName = event.packageName?.toString() ?: return
+
+        // Route Instagram events to the reels blocker — completely independent
+        if (packageName == INSTAGRAM_PACKAGE) {
+            instagramReelsBlocker.onAccessibilityEvent(event)
+            return
+        }
+
         if (packageName != YOUTUBE_PACKAGE) return
 
         val eventType = event.eventType
@@ -683,6 +692,7 @@ class AccessibilityMonitorService : AccessibilityService() {
         }
         shortsRunnable?.let { handler.removeCallbacks(it) }
         extractRunnable?.let { handler.removeCallbacks(it) }
+        instagramReelsBlocker.destroy()
         executor.shutdownNow()
         super.onDestroy()
     }

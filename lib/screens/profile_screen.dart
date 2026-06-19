@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../services/db_service.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -9,11 +10,15 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  static const _channel =
+      MethodChannel('com.example.accessibility_service/monitor');
+
   final TextEditingController _goalController = TextEditingController();
   bool _isLoading = true;
   bool _isSaving = false;
   bool _savedSuccess = false;
   String? _errorMessage;
+  bool _reelsBlockEnabled = true;
 
   static const _suggestions = [
     'Flutter Developer',
@@ -30,6 +35,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void initState() {
     super.initState();
     _loadProfile();
+    _loadReelsBlockSetting();
   }
 
   @override
@@ -45,6 +51,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
       _goalController.text = profile?['focus_goal']?.toString() ?? '';
       _isLoading = false;
     });
+  }
+
+  Future<void> _loadReelsBlockSetting() async {
+    try {
+      final enabled =
+          await _channel.invokeMethod<bool>('get_reels_block_enabled');
+      if (!mounted) return;
+      setState(() => _reelsBlockEnabled = enabled ?? true);
+    } on PlatformException {
+      // Default stays true
+    }
+  }
+
+  Future<void> _setReelsBlock(bool enabled) async {
+    setState(() => _reelsBlockEnabled = enabled);
+    try {
+      await _channel.invokeMethod('set_reels_block_enabled', enabled);
+    } on PlatformException {
+      // Best-effort; state already updated optimistically
+    }
   }
 
   Future<void> _saveGoal() async {
@@ -87,7 +113,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                // Header card
+                // ── Career goal header ─────────────────────────────────────
                 Card(
                   elevation: 0,
                   color: cs.primaryContainer.withValues(alpha: 0.5),
@@ -127,7 +153,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 20),
+
+                // ── Goal text field ────────────────────────────────────────
                 TextField(
                   controller: _goalController,
                   textInputAction: TextInputAction.done,
@@ -152,7 +180,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                // Quick-select suggestions
+
+                // ── Quick-select suggestions ───────────────────────────────
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -178,6 +207,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   }).toList(),
                 ),
                 const SizedBox(height: 20),
+
+                // ── Save button ────────────────────────────────────────────
                 FilledButton.icon(
                   onPressed: _isSaving ? null : _saveGoal,
                   icon: _isSaving
@@ -200,7 +231,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 16),
                   _StatusMessage(
                     icon: Icons.check_circle_rounded,
-                    message: 'Goal saved — evaluations will now use this context.',
+                    message:
+                        'Goal saved — evaluations will now use this context.',
                     color: Colors.green.shade700,
                     bgColor: Colors.green.withValues(alpha: 0.08),
                   ),
@@ -214,6 +246,63 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     bgColor: Colors.red.withValues(alpha: 0.08),
                   ),
                 ],
+
+                // ── Blocking settings ──────────────────────────────────────
+                const SizedBox(height: 32),
+                Text(
+                  'BLOCKING',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: cs.outline,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                        color: cs.outlineVariant.withValues(alpha: 0.5)),
+                  ),
+                  child: SwitchListTile(
+                    value: _reelsBlockEnabled,
+                    onChanged: _setReelsBlock,
+                    secondary: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _reelsBlockEnabled
+                            ? Colors.red.withValues(alpha: 0.10)
+                            : cs.surfaceContainerHighest,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        Icons.play_circle_outline_rounded,
+                        size: 22,
+                        color: _reelsBlockEnabled
+                            ? Colors.red.shade700
+                            : cs.outline,
+                      ),
+                    ),
+                    title: const Text('Block Instagram Reels',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w600, fontSize: 14)),
+                    subtitle: Text(
+                      _reelsBlockEnabled
+                          ? 'Overlay shown when Reels tab is active'
+                          : 'Reels are allowed — overlay is off',
+                      style:
+                          TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                    ),
+                    activeThumbColor: Colors.red.shade700,
+                    activeTrackColor: Colors.red.withValues(alpha: 0.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                  ),
+                ),
               ],
             ),
     );
@@ -249,9 +338,7 @@ class _StatusMessage extends StatelessWidget {
             child: Text(
               message,
               style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w500,
-                  fontSize: 13),
+                  color: color, fontWeight: FontWeight.w500, fontSize: 13),
             ),
           ),
         ],
