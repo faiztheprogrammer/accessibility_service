@@ -1,6 +1,6 @@
 # AI-Based Intelligent Productivity Enhancement System
 
-**FYP-F25-23 · University of Lahore · BSSE Fall 2022–2026**  
+**FYP-F22-26 · University of Lahore · BSSE Fall 2022–2026**  
 Supervisor: Mr. Syed Zeeshan · Students: Faiz Ur Rehman, Azeem Ur Rehman
 
 ---
