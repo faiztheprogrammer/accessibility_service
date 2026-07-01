@@ -93,7 +93,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
     return _DashboardData(today: todaySummary, history: merged);
   }
 
-  void _refresh() => setState(() => _dataFuture = _load());
+  void _refresh() {
+    final next = _load();
+    setState(() => _dataFuture = next);
+  }
 
   Future<void> _pickCustomRange() async {
     final now = DateTime.now();
