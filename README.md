@@ -75,18 +75,27 @@ android/app/src/main/kotlin/.../
 
 ### Run
 
+Copy the env template and fill in your key:
+
+```bash
+cp .env.example .env
+# edit .env and set GEMINI_API_KEY
+```
+
+Then run:
+
 ```bash
 flutter pub get
-flutter run --dart-define=GEMINI_API_KEY=your_key_here
+flutter run --dart-define-from-file=.env
 ```
 
-To build a release APK with the key:
+To build a release APK:
 
 ```bash
-flutter build apk --release --dart-define=GEMINI_API_KEY=your_key_here
+flutter build apk --release --dart-define-from-file=.env
 ```
 
-The key is read at compile time via `String.fromEnvironment('GEMINI_API_KEY')`. If omitted, the app falls back to local keyword scoring automatically — no crash.
+`.env` is gitignored. `.env.example` is committed as the template. The key is injected at compile time via `String.fromEnvironment('GEMINI_API_KEY')`. If the key is missing the app falls back to local keyword scoring — no crash.
 
 > **After install:** Go to Settings → Accessibility → Installed Services → enable the app. Without this the monitor won't fire.
 
