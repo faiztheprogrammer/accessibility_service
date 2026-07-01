@@ -113,7 +113,6 @@ class _MonitorScreenState extends State<MonitorScreen>
           final text = call.arguments['text'] ?? '';
           final title = call.arguments['title'] ?? '';
           final channel = call.arguments['channel'] ?? '';
-
           if (text.isNotEmpty || title.isNotEmpty) {
             final displayTitle = title.isNotEmpty ? title : text;
             final appName = _getAppName(package);
@@ -203,7 +202,7 @@ class _MonitorScreenState extends State<MonitorScreen>
         _bannerColor = Colors.orange.shade700;
       });
       return;
-    } catch (_) {
+    } catch (e) {
       final displayTitle = title.isNotEmpty ? title : text;
       _addLog(appName, displayTitle, false, source: 'evaluation_error');
       if (!mounted) return;

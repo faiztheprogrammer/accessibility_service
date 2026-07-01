@@ -70,29 +70,46 @@ class ApiService {
     );
 
     final prompt = '''
-You are the semantic scorer for an AI productivity monitor.
+You are a semantic relevance scorer for an AI productivity monitor.
 
-Career goal: "$focusGoal"
+The user's career goal is: "$focusGoal"
+
+Before scoring, infer the full skill domain this goal belongs to.
+For example:
+- "Flutter Developer" → mobile development, Dart, software engineering, CS fundamentals, APIs, UI/UX, JavaScript/TypeScript/web (adjacent ecosystem), system design, career growth in tech
+- "Medical Student" → anatomy, physiology, pathology, pharmacology, clinical skills, MBBS prep, biology, biochemistry, research
+- "Data Scientist" → Python, machine learning, statistics, data visualization, SQL, AI research, maths, Kaggle, model deployment
+- "Filmmaker" → cinematography, video editing, color grading, storytelling, screenwriting, production workflow, camera techniques
+- "Business Analyst" → market research, finance, Excel/SQL/BI tools, strategy, case studies, communication, MBA prep
+- "Graphic Designer" / "UI/UX Designer" → Figma, Illustrator, design systems, typography, color theory, UX research, prototyping
+
+Apply the same reasoning to any goal not listed above.
+
+Now evaluate this content:
 App: "$appName"
 Channel/account: "$channel"
-Captured content:
 Title: "$title"
 Visible text: "$extractedText"
 
-Decide whether this content helps the user progress toward the career goal.
-Return only valid JSON with this exact shape:
+Scoring rules:
+- 0.80–1.00: Core skill content — directly teaches or demonstrates the goal's primary domain (tutorials, deep dives, projects, case studies, interview prep)
+- 0.55–0.79: Adjacent or supportive — clearly useful for someone in this career path, even if not the primary tool (e.g. JavaScript for a Flutter developer, statistics for a data scientist)
+- 0.30–0.54: Loosely related — general tech/education/professional content with weak goal alignment
+- 0.00–0.29: Not relevant — entertainment, sports, gossip, memes, gaming, unrelated news, celebrity content, or casual scrolling even if the title sounds educational
+
+Key judgment calls:
+- A video that TEACHES or EXPLAINS something in the goal's domain scores 0.55+, even if the tool/language is adjacent
+- A video that is merely INTERESTING or TRENDING but not educational scores below 0.30
+- Channel name matters: a credible educational channel raises the score; a lifestyle/entertainment channel lowers it
+- Ignore clickbait framing; judge what the content actually teaches
+
+Return only valid JSON:
 {
   "is_productive": true or false,
   "relevance_score": number from 0.0 to 1.0,
   "label": "productive" or "unproductive",
   "reason": "short reason under 18 words"
 }
-
-Scoring guidance:
-- 0.80-1.00: directly useful for the goal.
-- 0.55-0.79: somewhat related or educational for the goal.
-- 0.20-0.54: general education/news but not goal-aligned.
-- 0.00-0.19: entertainment, gossip, memes, sports, politics, or unrelated scrolling.
 ''';
 
     try {

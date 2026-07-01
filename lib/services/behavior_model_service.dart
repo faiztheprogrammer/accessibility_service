@@ -76,7 +76,6 @@ class BehaviorModelService {
       modelRiskScore,
       (modelRiskScore * 0.45) + (liveRiskScore * 0.55),
     );
-
     return BehaviorRiskResult(
       riskScore: riskScore,
       modelRiskScore: modelRiskScore,
@@ -144,6 +143,24 @@ class BehaviorModelService {
     };
     ratios['${appCategory}_ratio'] = 1.0;
 
+    // Derive proxy values for features the app cannot directly observe.
+    // study_productivity: inferred from today's productive-verdict ratio (1–5 scale).
+    final totalVerdicts = verdicts.length;
+    final productiveVerdicts =
+        verdicts.where((r) => r['is_productive']?.toString() == '1').length;
+    final productiveRatio =
+        totalVerdicts > 0 ? productiveVerdicts / totalVerdicts : 0.5;
+    final studyProductivityProxy = (productiveRatio * 5.0).clamp(1.0, 5.0);
+
+    // stress_level: inferred from distraction intensity (app switches + distraction ratio).
+    final distractingVerdicts = totalVerdicts - productiveVerdicts;
+    final distractionRatio =
+        totalVerdicts > 0 ? distractingVerdicts / totalVerdicts : 0.0;
+    final stressScore = (appSwitches * 0.15 + distractionRatio * 3.5).clamp(1.0, 5.0);
+
+    // sleep_hours: not observable; use 6h as a neutral default.
+    const sleepHoursProxy = 6.0;
+
     return {
       'hour': now.hour.toString(),
       'day_of_week': now.weekday == DateTime.sunday ? '6' : (now.weekday - 1).toString(),
@@ -166,9 +183,9 @@ class BehaviorModelService {
       'activity_stationary_events': '0',
       'activity_walking_events': '0',
       'activity_running_events': '0',
-      'study_productivity': '',
-      'stress_level': '',
-      'sleep_hours': '',
+      'study_productivity': studyProductivityProxy.toStringAsFixed(1),
+      'stress_level': stressScore.toStringAsFixed(1),
+      'sleep_hours': sleepHoursProxy.toStringAsFixed(1),
     };
   }
 
@@ -252,19 +269,16 @@ class BehaviorModelService {
     List<String> tokens,
   ) {
     final vocabulary = (model['vocabulary'] as List<dynamic>).cast<String>();
-    final classCounts = model['class_counts'] as Map<String, dynamic>;
     final tokenCounts = model['token_counts'] as Map<String, dynamic>;
     final classTokenTotals = model['class_token_totals'] as Map<String, dynamic>;
     final vocabSize = math.max(vocabulary.length, 1);
-    final totalDocs = classCounts.values
-        .map((value) => int.parse(value.toString()))
-        .fold<int>(0, (sum, value) => sum + value);
 
     final scores = <int, double>{};
     for (final label in [0, 1]) {
       final labelKey = label.toString();
-      final classCount = int.tryParse(classCounts[labelKey]?.toString() ?? '') ?? 0;
-      var score = math.log((classCount + 1) / (totalDocs + 2));
+      // Use a balanced (50/50) prior rather than the training distribution's 9:1
+      // class imbalance, which would otherwise bury any high-risk signal.
+      var score = math.log(0.5);
       final counts = (tokenCounts[labelKey] as Map<String, dynamic>?) ?? {};
       final tokenTotal =
           int.tryParse(classTokenTotals[labelKey]?.toString() ?? '') ?? 0;

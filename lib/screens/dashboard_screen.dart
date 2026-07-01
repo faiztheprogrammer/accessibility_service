@@ -188,7 +188,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             : 'Activity — ${_range.label}',
                       ),
                       const SizedBox(height: 10),
-                      _MetricsGrid(summary: data.today),
+                      _MetricsGrid(history: data.history, range: _range),
                       const SizedBox(height: 16),
 
                       // ── Pie chart ────────────────────────────────────────
@@ -677,11 +677,28 @@ class _FocusScorePanel extends StatelessWidget {
 // ── Metrics grid ──────────────────────────────────────────────────────────────
 
 class _MetricsGrid extends StatelessWidget {
-  const _MetricsGrid({required this.summary});
-  final BehaviorSummary summary;
+  const _MetricsGrid({required this.history, required this.range});
+  final List<BehaviorSummary> history;
+  final _Range range;
 
   @override
   Widget build(BuildContext context) {
+    final totalTime =
+        history.fold<int>(0, (s, h) => s + h.totalTimeToday);
+    final totalSessions =
+        history.fold<int>(0, (s, h) => s + h.sessionFrequency);
+    final totalProductive =
+        history.fold<int>(0, (s, h) => s + h.productiveCount);
+    final totalDistracting =
+        history.fold<int>(0, (s, h) => s + h.unproductiveCount);
+
+    final timeLabel = switch (range) {
+      _Range.today => 'Time Today',
+      _Range.week => 'Time (7 Days)',
+      _Range.month => 'Time (30 Days)',
+      _Range.custom => 'Time (Range)',
+    };
+
     return GridView.count(
       crossAxisCount: 2,
       shrinkWrap: true,
@@ -692,26 +709,26 @@ class _MetricsGrid extends StatelessWidget {
       children: [
         _MetricTile(
           icon: Icons.timer_outlined,
-          label: 'Time Today',
-          value: _formatDuration(summary.totalTimeToday),
+          label: timeLabel,
+          value: _formatDuration(totalTime),
           color: Theme.of(context).colorScheme.primary,
         ),
         _MetricTile(
           icon: Icons.repeat_rounded,
           label: 'Sessions',
-          value: summary.sessionFrequency.toString(),
+          value: totalSessions.toString(),
           color: Theme.of(context).colorScheme.primary,
         ),
         _MetricTile(
           icon: Icons.check_circle_outline_rounded,
           label: 'Productive',
-          value: summary.productiveCount.toString(),
+          value: totalProductive.toString(),
           color: Colors.green.shade700,
         ),
         _MetricTile(
           icon: Icons.warning_amber_rounded,
           label: 'Distracting',
-          value: summary.unproductiveCount.toString(),
+          value: totalDistracting.toString(),
           color: Colors.red.shade700,
         ),
       ],
