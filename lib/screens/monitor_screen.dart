@@ -191,7 +191,7 @@ class _MonitorScreenState extends State<MonitorScreen>
             channel: channel,
             extractedText: text,
           )
-          .timeout(const Duration(seconds: 8));
+          .timeout(const Duration(seconds: 15));
     } on TimeoutException {
       final displayTitle = title.isNotEmpty ? title : text;
       _addLog(appName, displayTitle, false, source: 'ai_timeout');

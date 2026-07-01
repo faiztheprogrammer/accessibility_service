@@ -8,7 +8,7 @@ import 'db_service.dart';
 
 class ApiService {
   static const String _geminiApiKey =
-      String.fromEnvironment('GEMINI_API_KEY', defaultValue: 'AQ.Ab8RN6KOUVG1uz07BewEaVHq44618ZEtVafiLVotaOShUZIVNQ');
+      String.fromEnvironment('GEMINI_API_KEY');
   static const String _geminiModel =
       String.fromEnvironment('GEMINI_MODEL', defaultValue: 'gemini-2.5-flash');
   static const String _backendEvaluatorUrl =
