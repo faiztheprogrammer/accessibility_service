@@ -99,6 +99,39 @@ class MainActivity : FlutterActivity() {
                     MorningNudgeReceiver.cancelDailyNudge(this)
                     result.success(null)
                 }
+                "set_nudge_enabled" -> {
+                    val enabled = call.arguments as? Boolean ?: true
+                    prefs().edit().putBoolean(MorningNudgeReceiver.PREF_NUDGE_ENABLED, enabled).apply()
+                    if (enabled) MorningNudgeReceiver.scheduleDailyNudge(this)
+                    else MorningNudgeReceiver.cancelDailyNudge(this)
+                    result.success(null)
+                }
+                "get_nudge_enabled" -> {
+                    result.success(prefs().getBoolean(MorningNudgeReceiver.PREF_NUDGE_ENABLED, true))
+                }
+                "set_nudge_time" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val hour   = (args?.get("hour")   as? Int) ?: 8
+                    val minute = (args?.get("minute") as? Int) ?: 0
+                    prefs().edit()
+                        .putInt(MorningNudgeReceiver.PREF_NUDGE_HOUR, hour)
+                        .putInt(MorningNudgeReceiver.PREF_NUDGE_MINUTE, minute)
+                        .apply()
+                    MorningNudgeReceiver.scheduleDailyNudge(this)
+                    result.success(null)
+                }
+                "get_nudge_time" -> {
+                    val h = prefs().getInt(MorningNudgeReceiver.PREF_NUDGE_HOUR, 8)
+                    val m = prefs().getInt(MorningNudgeReceiver.PREF_NUDGE_MINUTE, 0)
+                    result.success(mapOf("hour" to h, "minute" to m))
+                }
+                "test_morning_nudge" -> {
+                    val intent = Intent(MorningNudgeReceiver.ACTION_MORNING_NUDGE).apply {
+                        setClass(this@MainActivity, MorningNudgeReceiver::class.java)
+                    }
+                    sendBroadcast(intent)
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }

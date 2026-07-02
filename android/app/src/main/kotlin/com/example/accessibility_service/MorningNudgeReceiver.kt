@@ -73,19 +73,30 @@ class MorningNudgeReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION_MORNING_NUDGE = "com.example.accessibility_service.MORNING_NUDGE"
-        const val NUDGE_CHANNEL_ID    = "morning_nudge"
+        const val ACTION_MORNING_NUDGE  = "com.example.accessibility_service.MORNING_NUDGE"
+        const val NUDGE_CHANNEL_ID      = "morning_nudge"
         const val NUDGE_NOTIFICATION_ID = 301
-        const val PREF_FOCUS_GOAL     = "focus_goal_cache"
+        const val PREF_FOCUS_GOAL       = "focus_goal_cache"
+        const val PREF_NUDGE_ENABLED    = "nudge_enabled"
+        const val PREF_NUDGE_HOUR       = "nudge_hour"
+        const val PREF_NUDGE_MINUTE     = "nudge_minute"
 
         fun scheduleDailyNudge(context: Context) {
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            if (!prefs.getBoolean(PREF_NUDGE_ENABLED, true)) {
+                cancelDailyNudge(context)
+                return
+            }
+
             val am = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pi = pendingIntent(context)
 
-            // Fire at 08:00 tomorrow (or today if it's still before 08:00)
+            val hour   = prefs.getInt(PREF_NUDGE_HOUR, 8)
+            val minute = prefs.getInt(PREF_NUDGE_MINUTE, 0)
+
             val cal = Calendar.getInstance().apply {
-                set(Calendar.HOUR_OF_DAY, 8)
-                set(Calendar.MINUTE, 0)
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
                 if (timeInMillis <= System.currentTimeMillis()) {

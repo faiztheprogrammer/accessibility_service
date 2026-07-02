@@ -21,6 +21,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _savedSuccess = false;
   String? _errorMessage;
   bool _reelsBlockEnabled = true;
+  bool _nudgeEnabled = true;
+  TimeOfDay _nudgeTime = const TimeOfDay(hour: 8, minute: 0);
+  bool _nudgeTestSent = false;
 
   static const _suggestions = [
     'Flutter Developer',
@@ -38,6 +41,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.initState();
     _loadProfile();
     _loadReelsBlockSetting();
+    _loadNudgeSettings();
   }
 
   @override
@@ -67,12 +71,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _loadNudgeSettings() async {
+    try {
+      final enabled = await _channel.invokeMethod<bool>('get_nudge_enabled');
+      final timeMap =
+          await _channel.invokeMethod<Map>('get_nudge_time');
+      if (!mounted) return;
+      setState(() {
+        _nudgeEnabled = enabled ?? true;
+        if (timeMap != null) {
+          _nudgeTime = TimeOfDay(
+            hour: (timeMap['hour'] as int?) ?? 8,
+            minute: (timeMap['minute'] as int?) ?? 0,
+          );
+        }
+      });
+    } on PlatformException {
+      // Defaults stay
+    }
+  }
+
   Future<void> _setReelsBlock(bool enabled) async {
     setState(() => _reelsBlockEnabled = enabled);
     try {
       await _channel.invokeMethod('set_reels_block_enabled', enabled);
     } on PlatformException {
       // Best-effort; state already updated optimistically
+    }
+  }
+
+  Future<void> _setNudgeEnabled(bool enabled) async {
+    setState(() => _nudgeEnabled = enabled);
+    try {
+      await _channel.invokeMethod('set_nudge_enabled', enabled);
+    } on PlatformException {
+      // Best-effort
+    }
+  }
+
+  Future<void> _pickNudgeTime() async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _nudgeTime,
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _nudgeTime = picked);
+    try {
+      await _channel.invokeMethod('set_nudge_time', {
+        'hour': picked.hour,
+        'minute': picked.minute,
+      });
+    } on PlatformException {
+      // Best-effort
+    }
+  }
+
+  Future<void> _testNudge() async {
+    try {
+      await _channel.invokeMethod('test_morning_nudge');
+      if (!mounted) return;
+      setState(() => _nudgeTestSent = true);
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) setState(() => _nudgeTestSent = false);
+      });
+    } on PlatformException {
+      // Silently ignore
     }
   }
 
@@ -257,6 +320,155 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     bgColor: Colors.red.withValues(alpha: 0.08),
                   ),
                 ],
+
+                // ── Notifications ──────────────────────────────────────────
+                const SizedBox(height: 32),
+                Text(
+                  'NOTIFICATIONS',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: cs.outline,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(
+                        color: cs.outlineVariant.withValues(alpha: 0.5)),
+                  ),
+                  child: Column(
+                    children: [
+                      // Toggle
+                      SwitchListTile(
+                        value: _nudgeEnabled,
+                        onChanged: _setNudgeEnabled,
+                        secondary: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: _nudgeEnabled
+                                ? cs.primaryContainer
+                                : cs.surfaceContainerHighest,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.wb_sunny_rounded,
+                            size: 22,
+                            color: _nudgeEnabled
+                                ? cs.primary
+                                : cs.outline,
+                          ),
+                        ),
+                        title: const Text('Daily Focus Reminder',
+                            style: TextStyle(
+                                fontWeight: FontWeight.w600, fontSize: 14)),
+                        subtitle: Text(
+                          _nudgeEnabled
+                              ? 'Morning nudge with your focus goal'
+                              : 'Morning reminder is off',
+                          style: TextStyle(
+                              fontSize: 12, color: cs.onSurfaceVariant),
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.only(
+                            topLeft: Radius.circular(14),
+                            topRight: Radius.circular(14),
+                          ),
+                        ),
+                      ),
+                      if (_nudgeEnabled) ...[
+                        Divider(
+                            height: 1,
+                            indent: 16,
+                            endIndent: 16,
+                            color: cs.outlineVariant.withValues(alpha: 0.4)),
+                        // Time picker row
+                        ListTile(
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: cs.primaryContainer,
+                              shape: BoxShape.circle,
+                            ),
+                            child:
+                                Icon(Icons.access_time_rounded, size: 22, color: cs.primary),
+                          ),
+                          title: const Text('Reminder time',
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w600, fontSize: 14)),
+                          subtitle: Text(
+                            _nudgeTime.format(context),
+                            style: TextStyle(
+                                fontSize: 12, color: cs.onSurfaceVariant),
+                          ),
+                          trailing: TextButton(
+                            onPressed: _pickNudgeTime,
+                            child: const Text('Change'),
+                          ),
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.zero,
+                          ),
+                        ),
+                        Divider(
+                            height: 1,
+                            indent: 16,
+                            endIndent: 16,
+                            color: cs.outlineVariant.withValues(alpha: 0.4)),
+                        // Test button row
+                        ListTile(
+                          leading: Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: _nudgeTestSent
+                                  ? Colors.green.withValues(alpha: 0.12)
+                                  : cs.surfaceContainerHighest,
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              _nudgeTestSent
+                                  ? Icons.check_rounded
+                                  : Icons.send_rounded,
+                              size: 20,
+                              color: _nudgeTestSent
+                                  ? Colors.green.shade700
+                                  : cs.outline,
+                            ),
+                          ),
+                          title: Text(
+                            _nudgeTestSent
+                                ? 'Notification sent!'
+                                : 'Send test notification',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: _nudgeTestSent
+                                  ? Colors.green.shade700
+                                  : cs.onSurface,
+                            ),
+                          ),
+                          subtitle: Text(
+                            'See what the morning reminder looks like',
+                            style: TextStyle(
+                                fontSize: 12, color: cs.onSurfaceVariant),
+                          ),
+                          onTap: _nudgeTestSent ? null : _testNudge,
+                          shape: const RoundedRectangleBorder(
+                            borderRadius: BorderRadius.only(
+                              bottomLeft: Radius.circular(14),
+                              bottomRight: Radius.circular(14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
 
                 // ── Blocking settings ──────────────────────────────────────
                 const SizedBox(height: 32),
