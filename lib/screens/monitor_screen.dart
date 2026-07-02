@@ -267,14 +267,15 @@ class _MonitorScreenState extends State<MonitorScreen>
           'contextual_distraction' => 'Contextual Distraction',
           _ => 'Possible Distraction',
         };
-        _bannerMessage = result.interventionTier == null
-            ? result.decisionReason
-            : 'Intervention tier ${result.interventionTier} logged';
+        _bannerMessage = result.decisionReason;
         _bannerColor = Colors.red.shade700;
       }
     });
 
     await _updateServiceNotification(result);
+    if (result.interventionTier != null) {
+      await _triggerIntervention(result.interventionTier!, result);
+    }
   }
 
   Future<void> _updateServiceNotification(DecisionResult result) async {
@@ -308,6 +309,115 @@ class _MonitorScreenState extends State<MonitorScreen>
     } on PlatformException {
       // Notification refresh is best-effort.
     }
+  }
+
+  Future<void> _triggerIntervention(int tier, DecisionResult result) async {
+    if (!mounted) return;
+
+    final distractionLabel = switch (result.decisionLabel) {
+      'high_distraction_risk' => 'High Distraction Risk',
+      'contextual_distraction' => 'Contextual Distraction',
+      _ => 'Possible Distraction',
+    };
+
+    if (tier == 1) {
+      // Tier 1 — update banner only, no dialog
+      setState(() {
+        _bannerTitle = 'Heads Up';
+        _bannerMessage = 'This content doesn\'t align with your goal.';
+        _bannerColor = Colors.orange.shade700;
+      });
+      return;
+    }
+
+    if (tier == 2) {
+      // Tier 2 — banner escalates + heads-up notification (visible on YouTube)
+      setState(() {
+        _bannerTitle = 'Distraction Pattern Detected';
+        _bannerMessage =
+            'You\'ve seen ${result.consecutiveUnproductiveCount} distracting items in a row. Consider refocusing.';
+        _bannerColor = Colors.deepOrange.shade700;
+      });
+      try {
+        await _platformChannel.invokeMethod('show_intervention_alert', {
+          'tier': 2,
+          'message':
+              'You\'ve watched ${result.consecutiveUnproductiveCount} distracting items in a row. Time to refocus on your goal.',
+        });
+      } on PlatformException {
+        // Best-effort — fall back to in-app snackbar only
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'You\'ve been distracted for a while. Time to refocus?',
+                style: TextStyle(fontWeight: FontWeight.w600),
+              ),
+              backgroundColor: Colors.deepOrange.shade700,
+              duration: const Duration(seconds: 5),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Dismiss',
+                textColor: Colors.white,
+                onPressed: () {},
+              ),
+            ),
+          );
+        }
+      }
+      return;
+    }
+
+    // Tier 3 — full dialog intervention + heads-up notification
+    setState(() {
+      _bannerTitle = 'Focus Alert';
+      _bannerMessage =
+          '${result.consecutiveUnproductiveCount} distracting items in a row. You need a break.';
+      _bannerColor = Colors.red.shade800;
+    });
+    try {
+      await _platformChannel.invokeMethod('show_intervention_alert', {
+        'tier': 3,
+        'message':
+            '${result.consecutiveUnproductiveCount} distracting items in a row. Put the phone down and get back to your goal.',
+      });
+    } on PlatformException {
+      // Best-effort.
+    }
+
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        icon: Icon(Icons.warning_rounded, color: Colors.red.shade700, size: 40),
+        title: const Text(
+          'Time to Refocus',
+          textAlign: TextAlign.center,
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Text(
+          'You\'ve watched ${ result.consecutiveUnproductiveCount} distracting items in a row '
+          '($distractionLabel). This is significantly impacting your focus score.\n\n'
+          'Put the phone down and get back to your goal.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 14, height: 1.5),
+        ),
+        actionsAlignment: MainAxisAlignment.center,
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.red.shade700,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10)),
+            ),
+            child: const Text('Got it, I\'ll refocus'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _closeCurrentSession() async {

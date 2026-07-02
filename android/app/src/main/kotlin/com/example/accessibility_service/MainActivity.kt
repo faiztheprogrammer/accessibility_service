@@ -18,6 +18,8 @@ class MainActivity : FlutterActivity() {
     private val ACTION_FLUTTER_EVENT = "com.example.accessibility_service.FLUTTER_EVENT"
     private val ACTION_UPDATE_SERVICE_NOTIFICATION =
         "com.example.accessibility_service.UPDATE_SERVICE_NOTIFICATION"
+    private val ACTION_SHOW_INTERVENTION =
+        "com.example.accessibility_service.SHOW_INTERVENTION"
 
     companion object {
         const val PREFS_NAME = "focusguard_prefs"
@@ -62,6 +64,19 @@ class MainActivity : FlutterActivity() {
                         setPackage(packageName)
                         putExtra("notification_title", notificationTitle)
                         putExtra("notification_text", notificationText)
+                    }
+                    sendBroadcast(intent)
+                    result.success(null)
+                }
+                "show_intervention_alert" -> {
+                    val args = call.arguments as? Map<*, *>
+                    val tier = (args?.get("tier") as? Int) ?: 2
+                    val message = args?.get("message")?.toString()
+                        ?: "You've been distracted. Time to refocus."
+                    val intent = Intent(ACTION_SHOW_INTERVENTION).apply {
+                        setPackage(packageName)
+                        putExtra("tier", tier)
+                        putExtra("message", message)
                     }
                     sendBroadcast(intent)
                     result.success(null)

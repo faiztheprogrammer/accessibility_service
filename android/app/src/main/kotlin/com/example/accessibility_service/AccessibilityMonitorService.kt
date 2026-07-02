@@ -23,11 +23,15 @@ class AccessibilityMonitorService : AccessibilityService() {
 
     companion object {
         const val CHANNEL_ID = "accessibility_monitor_service"
+        const val INTERVENTION_CHANNEL_ID = "focus_interventions"
         const val NOTIFICATION_ID = 101
+        const val INTERVENTION_NOTIFICATION_ID = 202
         const val FLUTTER_CHANNEL = "com.example.accessibility_service/monitor"
         const val ACTION_FLUTTER_EVENT = "com.example.accessibility_service.FLUTTER_EVENT"
         const val ACTION_UPDATE_SERVICE_NOTIFICATION =
             "com.example.accessibility_service.UPDATE_SERVICE_NOTIFICATION"
+        const val ACTION_SHOW_INTERVENTION =
+            "com.example.accessibility_service.SHOW_INTERVENTION"
         private const val YOUTUBE_PACKAGE = "com.google.android.youtube"
         private const val PLAY_SHORT_SUFFIX = " - play Short"
         private const val SHORTS_SCAN_THROTTLE_MS = 350L
@@ -58,6 +62,7 @@ class AccessibilityMonitorService : AccessibilityService() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
+        createInterventionNotificationChannel()
         val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         manager.cancel(102)
         manager.cancel(201)
@@ -78,6 +83,7 @@ class AccessibilityMonitorService : AccessibilityService() {
         val filter = IntentFilter().apply {
             addAction("com.example.accessibility_service.MEDIA_UPDATE")
             addAction(ACTION_UPDATE_SERVICE_NOTIFICATION)
+            addAction(ACTION_SHOW_INTERVENTION)
         }
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -134,6 +140,35 @@ class AccessibilityMonitorService : AccessibilityService() {
             .setSilent(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
+    }
+
+    private fun createInterventionNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val manager = getSystemService(NotificationManager::class.java)
+            val channel = NotificationChannel(
+                INTERVENTION_CHANNEL_ID,
+                "Focus Interventions",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Alerts when distraction pattern is detected"
+                enableVibration(true)
+            }
+            manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun showInterventionNotification(tier: Int, message: String) {
+        val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val title = if (tier >= 3) "Refocus Now" else "Distraction Alert"
+        val notification = NotificationCompat.Builder(this, INTERVENTION_CHANNEL_ID)
+            .setContentTitle(title)
+            .setContentText(message)
+            .setSmallIcon(android.R.drawable.ic_dialog_alert)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setVibrate(longArrayOf(0, 300, 100, 300))
+            .build()
+        manager.notify(INTERVENTION_NOTIFICATION_ID, notification)
     }
 
     private fun updateForegroundNotification(message: String, title: String = "Latest YouTube Title") {
@@ -238,7 +273,7 @@ class AccessibilityMonitorService : AccessibilityService() {
             lastCapturedTitle = shortsContent.title
 
             Log.i("ShortsFallback", "Detected YouTube Short: ${shortsContent.title}")
-            updateForegroundNotification(shortsContent.title)
+            updateForegroundNotification("Analysing content…", "Monitoring Active")
 
             val extractedText = listOf(
                 shortsContent.title,
@@ -656,6 +691,12 @@ class AccessibilityMonitorService : AccessibilityService() {
                 updateForegroundNotification(notificationText, notificationTitle)
                 return
             }
+            if (intent.action == ACTION_SHOW_INTERVENTION) {
+                val tier = intent.getIntExtra("tier", 2)
+                val message = intent.getStringExtra("message") ?: "You've been distracted. Time to refocus."
+                showInterventionNotification(tier, message)
+                return
+            }
 
             val title = intent.getStringExtra("title") ?: return
             val channel = intent.getStringExtra("channel") ?: ""
@@ -667,7 +708,7 @@ class AccessibilityMonitorService : AccessibilityService() {
             lastMediaTitleAt = System.currentTimeMillis()
 
             Log.i("MEDIA_MONITOR", "Media session detected: $title by $channel")
-            updateForegroundNotification(title)
+            updateForegroundNotification("Analysing content…", "Monitoring Active")
 
             val payload = mapOf(
                 "package" to packageName,
