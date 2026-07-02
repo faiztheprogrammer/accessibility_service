@@ -94,6 +94,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     final userId = await AuthService().currentUserId();
     await DatabaseService().upsertUserProfile(goal, userId: userId);
+    // Mirror goal to SharedPrefs so the morning nudge receiver can read it
+    // without opening SQLite from a BroadcastReceiver context.
+    try {
+      await _channel.invokeMethod('set_focus_goal_cache', goal);
+    } on PlatformException {
+      // Best-effort — nudge will just skip if goal isn't cached yet
+    }
     if (!mounted) return;
 
     setState(() {

@@ -89,6 +89,16 @@ class MainActivity : FlutterActivity() {
                 "get_reels_block_enabled" -> {
                     result.success(prefs().getBoolean(PREF_REELS_BLOCK, true))
                 }
+                "set_focus_goal_cache" -> {
+                    val goal = call.arguments as? String ?: ""
+                    prefs().edit().putString(MorningNudgeReceiver.PREF_FOCUS_GOAL, goal).apply()
+                    MorningNudgeReceiver.scheduleDailyNudge(this)
+                    result.success(null)
+                }
+                "cancel_morning_nudge" -> {
+                    MorningNudgeReceiver.cancelDailyNudge(this)
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
