@@ -238,140 +238,133 @@ class _ProfileScreenState extends State<ProfileScreen> {
           : ListView(
               padding: const EdgeInsets.all(20),
               children: [
-                // ── Career goal header ─────────────────────────────────────
+                // ── Career goal ────────────────────────────────────────────
+                Text(
+                  'CAREER GOAL',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: cs.outline,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Used to judge whether the content you watch aligns with your aspirations.',
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                ),
+                const SizedBox(height: 10),
                 Card(
                   elevation: 0,
-                  color: cs.primaryContainer.withValues(alpha: 0.5),
                   shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
                   ),
                   child: Padding(
                     padding: const EdgeInsets.all(16),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.track_changes_rounded,
-                            color: cs.primary, size: 32),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                'Your Career Goal',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                  color: cs.onSurface,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'FocusGuard uses this to judge whether the content you watch aligns with your aspirations.',
-                                style: TextStyle(
-                                    fontSize: 12,
-                                    color: cs.onSurfaceVariant),
-                              ),
-                            ],
+                        TextField(
+                          controller: _goalController,
+                          textInputAction: TextInputAction.done,
+                          onChanged: (_) {
+                            if (_savedSuccess || _errorMessage != null) {
+                              setState(() {
+                                _savedSuccess = false;
+                                _errorMessage = null;
+                              });
+                            }
+                          },
+                          onSubmitted: (_) => _saveGoal(),
+                          decoration: InputDecoration(
+                            labelText: 'Career goal',
+                            hintText: 'Type anything — e.g. Cardiologist, Game Dev…',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            prefixIcon: const Icon(Icons.edit_outlined),
+                            filled: true,
+                            fillColor: cs.surface,
+                            isDense: false,
                           ),
                         ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Quick pick',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: cs.outline,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: _suggestions.map((s) {
+                            final selected = _goalController.text.trim() == s;
+                            return FilterChip(
+                              label: Text(s),
+                              selected: selected,
+                              onSelected: (_) {
+                                setState(() {
+                                  _goalController.text = s;
+                                  _savedSuccess = false;
+                                  _errorMessage = null;
+                                });
+                              },
+                              labelStyle: TextStyle(
+                                fontSize: 12,
+                                color: selected ? cs.onPrimary : cs.onSurfaceVariant,
+                              ),
+                              selectedColor: cs.primary,
+                              checkmarkColor: cs.onPrimary,
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 16),
+                        FilledButton.icon(
+                          onPressed: _isSaving ? null : _saveGoal,
+                          icon: _isSaving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Icon(Icons.save_rounded),
+                          label: Text(_isSaving ? 'Saving…' : 'Save Goal'),
+                          style: FilledButton.styleFrom(
+                            minimumSize: const Size.fromHeight(44),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                        if (_savedSuccess) ...[
+                          const SizedBox(height: 12),
+                          _StatusMessage(
+                            icon: Icons.check_circle_rounded,
+                            message: 'Goal saved — evaluations will now use this context.',
+                            color: Colors.green.shade700,
+                            bgColor: Colors.green.withValues(alpha: 0.08),
+                          ),
+                        ],
+                        if (_errorMessage != null) ...[
+                          const SizedBox(height: 12),
+                          _StatusMessage(
+                            icon: Icons.error_outline_rounded,
+                            message: _errorMessage!,
+                            color: Colors.red.shade700,
+                            bgColor: Colors.red.withValues(alpha: 0.08),
+                          ),
+                        ],
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
-
-                // ── Goal text field ────────────────────────────────────────
-                TextField(
-                  controller: _goalController,
-                  textInputAction: TextInputAction.done,
-                  onChanged: (_) {
-                    if (_savedSuccess || _errorMessage != null) {
-                      setState(() {
-                        _savedSuccess = false;
-                        _errorMessage = null;
-                      });
-                    }
-                  },
-                  onSubmitted: (_) => _saveGoal(),
-                  decoration: InputDecoration(
-                    labelText: 'Career goal',
-                    hintText: 'Type anything — e.g. Cardiologist, Game Dev…',
-                    helperText: 'Or pick a suggestion below',
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    prefixIcon: const Icon(Icons.edit_outlined),
-                    filled: true,
-                    fillColor: cs.surface,
-                  ),
-                ),
-                const SizedBox(height: 12),
-
-                // ── Quick-select suggestions ───────────────────────────────
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: _suggestions.map((s) {
-                    final selected = _goalController.text.trim() == s;
-                    return FilterChip(
-                      label: Text(s),
-                      selected: selected,
-                      onSelected: (_) {
-                        setState(() {
-                          _goalController.text = s;
-                          _savedSuccess = false;
-                          _errorMessage = null;
-                        });
-                      },
-                      labelStyle: TextStyle(
-                        fontSize: 12,
-                        color: selected ? cs.onPrimary : cs.onSurfaceVariant,
-                      ),
-                      selectedColor: cs.primary,
-                      checkmarkColor: cs.onPrimary,
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 20),
-
-                // ── Save button ────────────────────────────────────────────
-                FilledButton.icon(
-                  onPressed: _isSaving ? null : _saveGoal,
-                  icon: _isSaving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.save_rounded),
-                  label: Text(_isSaving ? 'Saving…' : 'Save Goal'),
-                  style: FilledButton.styleFrom(
-                    minimumSize: const Size.fromHeight(48),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                ),
-                if (_savedSuccess) ...[
-                  const SizedBox(height: 16),
-                  _StatusMessage(
-                    icon: Icons.check_circle_rounded,
-                    message:
-                        'Goal saved — evaluations will now use this context.',
-                    color: Colors.green.shade700,
-                    bgColor: Colors.green.withValues(alpha: 0.08),
-                  ),
-                ],
-                if (_errorMessage != null) ...[
-                  const SizedBox(height: 16),
-                  _StatusMessage(
-                    icon: Icons.error_outline_rounded,
-                    message: _errorMessage!,
-                    color: Colors.red.shade700,
-                    bgColor: Colors.red.withValues(alpha: 0.08),
-                  ),
-                ],
 
                 // ── Focus keywords ─────────────────────────────────────────
                 const SizedBox(height: 32),
