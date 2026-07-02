@@ -139,6 +139,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _testNudge() async {
     try {
+      await _saveNudgeMessage();
       await _channel.invokeMethod('test_morning_nudge');
       if (!mounted) return;
       setState(() => _nudgeTestSent = true);
