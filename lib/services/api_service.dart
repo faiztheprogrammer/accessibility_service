@@ -20,6 +20,7 @@ class ApiService {
     required String extractedText,
     String appName = 'YouTube',
     String? focusGoal,
+    List<String> userKeywords = const [],
   }) async {
     final userId = await AuthService().currentUserId();
     final resolvedFocusGoal =
@@ -54,6 +55,7 @@ class ApiService {
       channel: channel,
       extractedText: extractedText,
       focusGoal: resolvedFocusGoal,
+      userKeywords: userKeywords,
     );
   }
 
@@ -334,6 +336,7 @@ Return only valid JSON:
     required String channel,
     required String extractedText,
     required String focusGoal,
+    List<String> userKeywords = const [],
     String source = 'local_fallback',
     String reason = 'Local keyword scoring used.',
   }) {
@@ -342,6 +345,7 @@ Return only valid JSON:
       channel: channel,
       extractedText: extractedText,
       focusGoal: focusGoal,
+      userKeywords: userKeywords,
     );
     final relevanceScore = local.score;
     final isProductive = relevanceScore >= 0.55;
@@ -511,6 +515,7 @@ class _PersonalizedLocalEvaluator {
     required String channel,
     required String extractedText,
     required String focusGoal,
+    List<String> userKeywords = const [],
   }) {
     final text = _normalize('$title $channel $extractedText');
     final goal = _normalize(focusGoal);
@@ -519,16 +524,21 @@ class _PersonalizedLocalEvaluator {
     final expandedTerms = <String>{
       ...goalTerms,
       for (final domain in inferredDomains) ...?_domainTerms[domain],
+      for (final kw in userKeywords)
+        if (kw.trim().length >= 2) kw.trim().toLowerCase(),
     };
 
     final goalHits = _hitCount(text, goalTerms);
-    final expandedHits = _hitCount(text, expandedTerms) - goalHits;
+    final userKeywordHits = userKeywords.isEmpty
+        ? 0
+        : _hitCount(text, userKeywords.map((k) => k.trim().toLowerCase()));
+    final expandedHits = _hitCount(text, expandedTerms) - goalHits - userKeywordHits;
     final learningHits = _hitCount(text, _learningIntentTerms);
     final distractionHits = _hitCount(text, _distractionTerms);
-    final hasGoalSignal = goalHits > 0 || expandedHits > 0;
-
+    final hasGoalSignal = goalHits > 0 || userKeywordHits > 0 || expandedHits > 0;
     var score = 0.18;
     score += goalHits * 0.24;
+    score += userKeywordHits * 0.24;
     score += expandedHits * 0.10;
     score += learningHits * (hasGoalSignal ? 0.10 : 0.04);
 

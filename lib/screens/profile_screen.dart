@@ -17,6 +17,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   final TextEditingController _goalController = TextEditingController();
   final TextEditingController _nudgeMessageController = TextEditingController();
+  final TextEditingController _keywordController = TextEditingController();
+  List<String> _focusKeywords = [];
   bool _isLoading = true;
   bool _isSaving = false;
   bool _savedSuccess = false;
@@ -43,12 +45,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadProfile();
     _loadReelsBlockSetting();
     _loadNudgeSettings();
+    _loadFocusKeywords();
   }
 
   @override
   void dispose() {
     _goalController.dispose();
     _nudgeMessageController.dispose();
+    _keywordController.dispose();
     super.dispose();
   }
 
@@ -135,6 +139,41 @@ class _ProfileScreenState extends State<ProfileScreen> {
     } on PlatformException {
       // Best-effort
     }
+  }
+
+  Future<void> _loadFocusKeywords() async {
+    try {
+      final raw = await _channel.invokeMethod<String>('get_focus_keywords');
+      if (!mounted) return;
+      setState(() {
+        _focusKeywords = (raw == null || raw.trim().isEmpty)
+            ? []
+            : raw.split(',').map((k) => k.trim()).where((k) => k.isNotEmpty).toList();
+      });
+    } on PlatformException {
+      // Default empty
+    }
+  }
+
+  Future<void> _saveFocusKeywords() async {
+    try {
+      await _channel.invokeMethod('set_focus_keywords', _focusKeywords.join(','));
+    } on PlatformException {
+      // Best-effort
+    }
+  }
+
+  void _addKeyword() {
+    final kw = _keywordController.text.trim();
+    if (kw.isEmpty || _focusKeywords.contains(kw)) return;
+    setState(() => _focusKeywords.add(kw));
+    _keywordController.clear();
+    _saveFocusKeywords();
+  }
+
+  void _removeKeyword(String kw) {
+    setState(() => _focusKeywords.remove(kw));
+    _saveFocusKeywords();
   }
 
   Future<void> _testNudge() async {
@@ -333,6 +372,98 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     bgColor: Colors.red.withValues(alpha: 0.08),
                   ),
                 ],
+
+                // ── Focus keywords ─────────────────────────────────────────
+                const SizedBox(height: 32),
+                Text(
+                  'FOCUS KEYWORDS',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.1,
+                    color: cs.outline,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'When Gemini is unavailable, these words tell the app what counts as on-topic for you.',
+                  style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+                ),
+                const SizedBox(height: 10),
+                Card(
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    side: BorderSide(color: cs.outlineVariant.withValues(alpha: 0.5)),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _keywordController,
+                                textInputAction: TextInputAction.done,
+                                onSubmitted: (_) => _addKeyword(),
+                                decoration: InputDecoration(
+                                  hintText: 'e.g. cardiology, flutter, leetcode',
+                                  hintStyle: TextStyle(fontSize: 13, color: cs.outline),
+                                  isDense: true,
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  filled: true,
+                                  fillColor: cs.surface,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            FilledButton(
+                              onPressed: _addKeyword,
+                              style: FilledButton.styleFrom(
+                                minimumSize: const Size(0, 42),
+                                padding: const EdgeInsets.symmetric(horizontal: 16),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                              ),
+                              child: const Text('Add'),
+                            ),
+                          ],
+                        ),
+                        if (_focusKeywords.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: _focusKeywords.map((kw) => Chip(
+                              label: Text(kw, style: const TextStyle(fontSize: 12)),
+                              deleteIcon: const Icon(Icons.close, size: 14),
+                              onDeleted: () => _removeKeyword(kw),
+                              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              backgroundColor: cs.primaryContainer.withValues(alpha: 0.6),
+                              labelStyle: TextStyle(color: cs.onPrimaryContainer),
+                              deleteIconColor: cs.onPrimaryContainer.withValues(alpha: 0.7),
+                              side: BorderSide.none,
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                            )).toList(),
+                          ),
+                        ],
+                        if (_focusKeywords.isEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            'No keywords yet — add some above.',
+                            style: TextStyle(fontSize: 12, color: cs.outline),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
 
                 // ── Notifications ──────────────────────────────────────────
                 const SizedBox(height: 32),

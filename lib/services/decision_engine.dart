@@ -1,9 +1,12 @@
 import 'dart:developer' as developer;
 
+import 'package:flutter/services.dart';
 import 'api_service.dart';
 import 'auth_service.dart';
 import 'behavior_model_service.dart';
 import 'db_service.dart';
+
+const _channel = MethodChannel('com.example.accessibility_service/monitor');
 
 class DecisionResult {
   final int contentId;
@@ -72,6 +75,7 @@ class DecisionEngine {
 
     final userId = await AuthService().currentUserId();
     final focusGoal = await _db.getFocusGoal(userId: userId);
+    final userKeywords = await _loadUserKeywords();
     final contentHash = _contentHash(
       title: normalizedTitle,
       channel: normalizedChannel,
@@ -148,6 +152,7 @@ class DecisionEngine {
       extractedText: normalizedText,
       appName: appName,
       focusGoal: focusGoal,
+      userKeywords: userKeywords,
     );
 
     final isProductive = apiResult?['is_productive'] == true;
@@ -221,6 +226,16 @@ class DecisionEngine {
       consecutiveUnproductiveCount: _consecutiveUnproductiveCount,
       interventionTier: interventionTier,
     );
+  }
+
+  Future<List<String>> _loadUserKeywords() async {
+    try {
+      final raw = await _channel.invokeMethod<String>('get_focus_keywords');
+      if (raw == null || raw.trim().isEmpty) return const [];
+      return raw.split(',').map((k) => k.trim()).where((k) => k.isNotEmpty).toList();
+    } on PlatformException {
+      return const [];
+    }
   }
 
   Future<int?> _updateInterventionState({

@@ -24,6 +24,7 @@ class MainActivity : FlutterActivity() {
     companion object {
         const val PREFS_NAME = "focusguard_prefs"
         const val PREF_REELS_BLOCK = "reels_block_enabled"
+        const val PREF_FOCUS_KEYWORDS = "focus_keywords"
     }
 
     private fun prefs(): SharedPreferences =
@@ -132,6 +133,14 @@ class MainActivity : FlutterActivity() {
                 }
                 "get_nudge_message" -> {
                     result.success(prefs().getString(MorningNudgeReceiver.PREF_NUDGE_MESSAGE, ""))
+                }
+                "set_focus_keywords" -> {
+                    val keywords = call.arguments as? String ?: ""
+                    prefs().edit().putString(PREF_FOCUS_KEYWORDS, keywords).apply()
+                    result.success(null)
+                }
+                "get_focus_keywords" -> {
+                    result.success(prefs().getString(PREF_FOCUS_KEYWORDS, ""))
                 }
                 "test_morning_nudge" -> {
                     MorningNudgeReceiver.createChannel(this)
