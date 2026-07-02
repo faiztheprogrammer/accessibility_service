@@ -17,58 +17,9 @@ class MorningNudgeReceiver : BroadcastReceiver() {
         when (intent.action) {
             Intent.ACTION_BOOT_COMPLETED,
             AlarmManager.ACTION_SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED -> {
-                // Re-schedule after reboot or permission grant
                 scheduleDailyNudge(context)
             }
             ACTION_MORNING_NUDGE -> postNudgeNotification(context)
-        }
-    }
-
-    private fun postNudgeNotification(context: Context) {
-        val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
-        val goal = prefs.getString(PREF_FOCUS_GOAL, null)
-            ?.takeIf { it.isNotBlank() }
-            ?: return  // No goal set — nothing to nudge about
-
-        createChannel(context)
-
-        val tapIntent = PendingIntent.getActivity(
-            context,
-            0,
-            context.packageManager.getLaunchIntentForPackage(context.packageName),
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val notification = NotificationCompat.Builder(context, NUDGE_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_dialog_info)
-            .setContentTitle("Good morning! Stay focused today.")
-            .setContentText("Your goal: $goal")
-            .setStyle(NotificationCompat.BigTextStyle()
-                .bigText("Your goal: $goal\n\nOpen the app to start your monitoring session."))
-            .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-            .setAutoCancel(true)
-            .setContentIntent(tapIntent)
-            .build()
-
-        val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        nm.notify(NUDGE_NOTIFICATION_ID, notification)
-
-        // Reschedule for the next day
-        scheduleDailyNudge(context)
-    }
-
-    private fun createChannel(context: Context) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                NUDGE_CHANNEL_ID,
-                "Daily Focus Reminder",
-                NotificationManager.IMPORTANCE_DEFAULT
-            ).apply {
-                description = "Morning nudge reminding you of your focus goal"
-                setSound(null, null)
-            }
-            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager)
-                .createNotificationChannel(channel)
         }
     }
 
@@ -80,6 +31,58 @@ class MorningNudgeReceiver : BroadcastReceiver() {
         const val PREF_NUDGE_ENABLED    = "nudge_enabled"
         const val PREF_NUDGE_HOUR       = "nudge_hour"
         const val PREF_NUDGE_MINUTE     = "nudge_minute"
+
+        fun postNudgeNotification(context: Context) {
+            val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
+            val goal = prefs.getString(PREF_FOCUS_GOAL, null)?.takeIf { it.isNotBlank() }
+
+            createChannel(context)
+
+            val tapIntent = PendingIntent.getActivity(
+                context,
+                0,
+                context.packageManager.getLaunchIntentForPackage(context.packageName),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val bodyText = if (goal != null)
+                "Your goal: $goal\n\nOpen the app to start your monitoring session."
+            else
+                "Set a career goal in the app so your daily reminders are personalised."
+
+            val notification = NotificationCompat.Builder(context, NUDGE_CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("Good morning! Stay focused today.")
+                .setContentText(if (goal != null) "Your goal: $goal" else "Tap to set your focus goal")
+                .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setContentIntent(tapIntent)
+                .build()
+
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.notify(NUDGE_NOTIFICATION_ID, notification)
+
+            // Reschedule for the next day
+            scheduleDailyNudge(context)
+        }
+
+        fun createChannel(context: Context) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+                // Only create if it doesn't exist yet — importance can't be changed after creation
+                if (nm.getNotificationChannel(NUDGE_CHANNEL_ID) == null) {
+                    val channel = NotificationChannel(
+                        NUDGE_CHANNEL_ID,
+                        "Daily Focus Reminder",
+                        NotificationManager.IMPORTANCE_HIGH
+                    ).apply {
+                        description = "Morning nudge reminding you of your focus goal"
+                    }
+                    nm.createNotificationChannel(channel)
+                }
+            }
+        }
 
         fun scheduleDailyNudge(context: Context) {
             val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
@@ -106,7 +109,6 @@ class MorningNudgeReceiver : BroadcastReceiver() {
 
             try {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && !am.canScheduleExactAlarms()) {
-                    // Exact alarms not permitted — use inexact (fires within ~15 min window)
                     am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)
                 } else {
                     am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, cal.timeInMillis, pi)

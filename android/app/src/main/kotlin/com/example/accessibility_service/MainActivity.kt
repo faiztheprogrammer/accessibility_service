@@ -126,10 +126,8 @@ class MainActivity : FlutterActivity() {
                     result.success(mapOf("hour" to h, "minute" to m))
                 }
                 "test_morning_nudge" -> {
-                    val intent = Intent(MorningNudgeReceiver.ACTION_MORNING_NUDGE).apply {
-                        setClass(this@MainActivity, MorningNudgeReceiver::class.java)
-                    }
-                    sendBroadcast(intent)
+                    MorningNudgeReceiver.createChannel(this)
+                    MorningNudgeReceiver.postNudgeNotification(this)
                     result.success(null)
                 }
                 else -> result.notImplemented()
