@@ -216,11 +216,21 @@ otherwise                                     →  possible_distraction
 
 ### Intervention tiers (consecutive distraction count)
 
-| Count | Tier | Behaviour |
-|---|---|---|
-| 1 | Tier 1 | Soft notification |
-| 3 | Tier 2 | Warning with session stats |
-| ≥ 5 | Tier 3 | Strong alert |
+The engine counts consecutive distracting verdicts and escalates through three tiers. Thresholds are set higher than you might expect because YouTube Shorts can fire many verdicts in quick succession as the user swipes between videos.
+
+| Count | Tier | In-app (app open) | Overlay (app backgrounded) |
+|---|---|---|---|
+| 1st | Tier 1 | Banner changes to "Heads Up" | — |
+| 6th | Tier 2 | Banner escalates to orange | High-priority heads-up notification over YouTube (with vibration) |
+| 12th+ | Tier 3 | Blocking `AlertDialog` requiring acknowledgement | High-priority heads-up notification over YouTube (with vibration) |
+
+**How it works end-to-end:**
+1. Flutter `DecisionEngine` increments `_consecutiveUnproductiveCount` on each distraction verdict and returns an `interventionTier`.
+2. `MonitorScreen._triggerIntervention()` updates the in-app UI and calls `MethodChannel → show_intervention_alert` with the tier number and message.
+3. `MainActivity` broadcasts `ACTION_SHOW_INTERVENTION` to `AccessibilityMonitorService`.
+4. The service posts a notification on the `focus_interventions` channel (`IMPORTANCE_HIGH`), which Android delivers as a heads-up banner even while the user is inside YouTube.
+
+A productive verdict resets `_consecutiveUnproductiveCount` to zero.
 
 ---
 
