@@ -125,6 +125,14 @@ class MainActivity : FlutterActivity() {
                     val m = prefs().getInt(MorningNudgeReceiver.PREF_NUDGE_MINUTE, 0)
                     result.success(mapOf("hour" to h, "minute" to m))
                 }
+                "set_nudge_message" -> {
+                    val msg = call.arguments as? String ?: ""
+                    prefs().edit().putString(MorningNudgeReceiver.PREF_NUDGE_MESSAGE, msg).apply()
+                    result.success(null)
+                }
+                "get_nudge_message" -> {
+                    result.success(prefs().getString(MorningNudgeReceiver.PREF_NUDGE_MESSAGE, ""))
+                }
                 "test_morning_nudge" -> {
                     MorningNudgeReceiver.createChannel(this)
                     MorningNudgeReceiver.postNudgeNotification(this)

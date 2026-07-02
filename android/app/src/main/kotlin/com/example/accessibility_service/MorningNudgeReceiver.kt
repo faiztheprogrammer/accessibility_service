@@ -31,10 +31,13 @@ class MorningNudgeReceiver : BroadcastReceiver() {
         const val PREF_NUDGE_ENABLED    = "nudge_enabled"
         const val PREF_NUDGE_HOUR       = "nudge_hour"
         const val PREF_NUDGE_MINUTE     = "nudge_minute"
+        const val PREF_NUDGE_MESSAGE    = "nudge_message"
+        const val DEFAULT_NUDGE_TITLE   = "Good morning! Stay focused today."
 
         fun postNudgeNotification(context: Context) {
             val prefs = context.getSharedPreferences(MainActivity.PREFS_NAME, Context.MODE_PRIVATE)
-            val goal = prefs.getString(PREF_FOCUS_GOAL, null)?.takeIf { it.isNotBlank() }
+            val goal    = prefs.getString(PREF_FOCUS_GOAL, null)?.takeIf { it.isNotBlank() }
+            val custom  = prefs.getString(PREF_NUDGE_MESSAGE, null)?.takeIf { it.isNotBlank() }
 
             createChannel(context)
 
@@ -45,16 +48,14 @@ class MorningNudgeReceiver : BroadcastReceiver() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
 
-            val bodyText = if (goal != null)
-                "Your goal: $goal\n\nOpen the app to start your monitoring session."
-            else
-                "Set a career goal in the app so your daily reminders are personalised."
+            val title = custom ?: DEFAULT_NUDGE_TITLE
+            val body  = if (goal != null) "Your goal: $goal" else "Tap to set your focus goal"
 
             val notification = NotificationCompat.Builder(context, NUDGE_CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle("Good morning! Stay focused today.")
-                .setContentText(if (goal != null) "Your goal: $goal" else "Tap to set your focus goal")
-                .setStyle(NotificationCompat.BigTextStyle().bigText(bodyText))
+                .setContentTitle(title)
+                .setContentText(body)
+                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
                 .setContentIntent(tapIntent)

@@ -16,6 +16,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       MethodChannel('com.example.accessibility_service/monitor');
 
   final TextEditingController _goalController = TextEditingController();
+  final TextEditingController _nudgeMessageController = TextEditingController();
   bool _isLoading = true;
   bool _isSaving = false;
   bool _savedSuccess = false;
@@ -47,6 +48,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void dispose() {
     _goalController.dispose();
+    _nudgeMessageController.dispose();
     super.dispose();
   }
 
@@ -74,8 +76,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Future<void> _loadNudgeSettings() async {
     try {
       final enabled = await _channel.invokeMethod<bool>('get_nudge_enabled');
-      final timeMap =
-          await _channel.invokeMethod<Map>('get_nudge_time');
+      final timeMap = await _channel.invokeMethod<Map>('get_nudge_time');
+      final msg = await _channel.invokeMethod<String>('get_nudge_message');
       if (!mounted) return;
       setState(() {
         _nudgeEnabled = enabled ?? true;
@@ -85,6 +87,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             minute: (timeMap['minute'] as int?) ?? 0,
           );
         }
+        _nudgeMessageController.text = msg ?? '';
       });
     } on PlatformException {
       // Defaults stay
@@ -121,6 +124,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
         'hour': picked.hour,
         'minute': picked.minute,
       });
+    } on PlatformException {
+      // Best-effort
+    }
+  }
+
+  Future<void> _saveNudgeMessage() async {
+    try {
+      await _channel.invokeMethod('set_nudge_message', _nudgeMessageController.text.trim());
     } on PlatformException {
       // Best-effort
     }
@@ -244,7 +255,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onSubmitted: (_) => _saveGoal(),
                   decoration: InputDecoration(
                     labelText: 'Career goal',
-                    hintText: 'e.g. Flutter Developer, Medical Student…',
+                    hintText: 'Type anything — e.g. Cardiologist, Game Dev…',
+                    helperText: 'Or pick a suggestion below',
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                     ),
@@ -412,6 +424,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           shape: const RoundedRectangleBorder(
                             borderRadius: BorderRadius.zero,
+                          ),
+                        ),
+                        Divider(
+                            height: 1,
+                            indent: 16,
+                            endIndent: 16,
+                            color: cs.outlineVariant.withValues(alpha: 0.4)),
+                        // Custom reminder message
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+                          child: TextField(
+                            controller: _nudgeMessageController,
+                            maxLength: 80,
+                            textInputAction: TextInputAction.done,
+                            onSubmitted: (_) => _saveNudgeMessage(),
+                            onEditingComplete: _saveNudgeMessage,
+                            decoration: InputDecoration(
+                              labelText: 'Reminder message',
+                              hintText: 'Good morning! Stay focused today.',
+                              helperText: 'Leave blank to use the default message',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              prefixIcon: const Icon(Icons.edit_notifications_rounded),
+                              filled: true,
+                              fillColor: cs.surface,
+                              counterStyle: TextStyle(fontSize: 11, color: cs.outline),
+                            ),
                           ),
                         ),
                         Divider(
