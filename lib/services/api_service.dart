@@ -137,7 +137,7 @@ Return only valid JSON:
               },
             }),
           )
-          .timeout(const Duration(seconds: 5));
+          .timeout(const Duration(seconds: 8));
 
       if (response.statusCode != 200) {
         developer.log(

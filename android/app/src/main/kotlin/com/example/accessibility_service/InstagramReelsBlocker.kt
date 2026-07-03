@@ -47,9 +47,11 @@ class InstagramReelsBlocker(private val context: Context) {
         // Debounce for showing the overlay to avoid flicker on first entry
         private const val SHOW_DEBOUNCE_MS = 150L
 
-        // Overlay height in dp — stops at Instagram tab bar top.
-        // From live dump on 720x1600 @ 320dpi: tab_bar top = 1424px = 712dp
-        private const val OVERLAY_HEIGHT_DP = 712
+        // Fraction of the screen height the overlay covers. The remaining bottom
+        // strip is left uncovered so Instagram's tab bar stays tappable. Computed
+        // at runtime from the real screen size instead of a hardcoded dp value so
+        // it works across all device resolutions.
+        private const val OVERLAY_HEIGHT_FRACTION = 0.90
     }
 
     private val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
@@ -86,9 +88,12 @@ class InstagramReelsBlocker(private val context: Context) {
         val desc = event.contentDescription?.toString() ?: ""
         val className = event.className?.toString() ?: ""
 
-        // SeekBar from Instagram = Reels video progress bar, confirmed in logs
+        // SeekBar from Instagram = Reels video progress bar, confirmed in logs.
+        // Match loosely: class name (most reliable, version-independent) OR any
+        // description containing "seek" (covers "Seekbar", "Seek bar", "Seek
+        // control", and locale variants) so detection survives Instagram updates.
         val isSeekBarEvent = className.contains("SeekBar", ignoreCase = true) ||
-                desc.equals("Seekbar", ignoreCase = true)
+                desc.contains("seek", ignoreCase = true)
 
         if (isSeekBarEvent) {
             onReelsDetected()
@@ -143,7 +148,10 @@ class InstagramReelsBlocker(private val context: Context) {
         }
 
         val density = context.resources.displayMetrics.density
-        val overlayHeightPx = (OVERLAY_HEIGHT_DP * density).toInt()
+        // Derive overlay height from the real screen height so it scales to any
+        // device. Leaves the bottom ~10% clear for Instagram's tab bar.
+        val screenHeightPx = context.resources.displayMetrics.heightPixels
+        val overlayHeightPx = (screenHeightPx * OVERLAY_HEIGHT_FRACTION).toInt()
 
         val overlayType = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O)
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
